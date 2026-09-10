@@ -29,3 +29,14 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 # Gracias a heredar de Base sabe que esas classes representan tablas de la base de datos,
 # y puede encargarse de crearlas, relacionarlas entre sí, etc.
 Base = declarative_base()
+
+
+# Esta función se usa para abrir y cerrar sesiones en la base de datos en los endpoints
+def get_db():
+    db = SessionLocal()
+    
+    try:
+        yield db # abre la sessión y la deja abierta hasta llegar al finally
+    finally:
+        db.close() # cierra la sessión siempre, incluso si hay un error
+        
