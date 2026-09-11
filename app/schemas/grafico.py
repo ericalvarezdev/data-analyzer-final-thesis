@@ -8,12 +8,23 @@ from app.schemas.columna import ColumnaResponse
 
 class GraficoGeneradoResponse(BaseModel):
     id: int
-    nombre_grafico: str
+    archivo_id: int
+    nombre: str|None
     tipo_grafico: str
-    columna: ColumnaResponse # como en la primera iteración un gráfico solo puede ser de una columna lo hago asi
+    
+    # como en la primera iteración un gráfico solo puede ser de una columna lo hago asi
+    # no hay riesgo de bucle porque ColumnaResponse no contiene ningún GraficoGeneradoResponse
+    columna: ColumnaResponse 
     fecha_creacion: datetime # en siguientes iteraciones la fecha vendrá en el informe y no el gráfico
+    
     
     class Config:
         from_attributes = True
+        
+
+class GraficoCreadoRequest(BaseModel):
+    columna_id: int
+    tipo_grafico: str
+    nombre: str|None = None
         
     

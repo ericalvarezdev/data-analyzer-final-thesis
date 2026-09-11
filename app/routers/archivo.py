@@ -16,6 +16,7 @@ FORMATOS_PERMITIDOS = ["xlsx", "csv"]
 TAMAÑO_MAXIMO_MB = 10
 
 
+# enpoint para subir un archivo
 @router.post("/", response_model=ArchivoSubidoResponse)
 def subir_archivo(file: UploadFile = File(...), db: Session = Depends(get_db)):
     
@@ -63,4 +64,46 @@ def subir_archivo(file: UploadFile = File(...), db: Session = Depends(get_db)):
     
     return nuevo_archivo
     
+
+# endpoint para previsualizar las x filas que elija el usuario (por defecto 10)
+@router.get("/{archivo_id}/preview")
+def previsualizar_archivo(archivo_id: int, filas: int = 10, db: Session = Depends(get_db)):
+    
+    archivo_repo = ArchivoRepository(db)
+    archivo = archivo_repo.get(archivo_id)
+    
+    # Si el archivo no existe devolvemos un error
+    if archivo is None:
+        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+    
+    # Transformo el archivo en un dataframe
+    df = leer_archivo(archivo.ruta_almacenamiento, archivo.formato)
+    
+    
+    # .head(filas) coge solo las primeras N filas (por defecto 10)
+    # .fillna("") sustituye los valores vacíos (NaN) por texto vacío, porque
+    # NaN no se puede convertir directamente a JSON (daría error)
+    # .to_dict(orient="records") convierte cada dila en un diccionario y cada columna 
+    # en una clave de ese diccionario
+    primeras_filas = df.head(filas).fillna("").to_dict(orient="records")
+    
+    return {
+        "columnas": list(df.columns),
+        "filas": primeras_filas,
+    }
+    
+    """
+    queda asi en JSON:
+        {
+        "columnas": ["nombre", "edad"],
+        "filas": [
+            {"nombre": "Eric", "edad": 24},
+            {"nombre": "Ana", "edad": 22}
+        ]
+        }
+    """
+
+    
+    
+
     

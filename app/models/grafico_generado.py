@@ -9,8 +9,9 @@ class GraficoGenerado(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     archivo_id = Column(Integer, ForeignKey("archivos_subidos.id"), nullable=False) # En próximas iteraciones el gráfico generado apuntara al informe generado y no al archivo generado
+    columna_id = Column(Integer, ForeignKey("columnas.id"), nullable=False)
+    nombre = Column(String, nullable=True)
     tipo_grafico = Column(String, nullable=False)
-    columna_analizada = Column(Integer, ForeignKey("columnas.id"), nullable=False)
     fecha_creacion = Column(DateTime, default=datetime.utcnow) # Cuando apunte a informe la fecha de creación ya estará en informe y no en gráfoico generado
     
     archivo = relationship("ArchivoSubido", back_populates="graficos")
