@@ -1,10 +1,10 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
-
+from app.config import settings
 
 
 # URL de connexión a la base de datos
-SQLALCHEMY_DATABASE_URL = "sqlite:///./data_analyzer.db"
+SQLALCHEMY_DATABASE_URL = settings.database_url
 
 # engine es la connexión real entre el código de python y la base de datos
 # el objeto engine se encargará de hablar con SQLite/Postgres

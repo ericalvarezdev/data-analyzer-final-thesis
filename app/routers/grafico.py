@@ -46,7 +46,7 @@ def generar_grafico(archivo_id: int, datos: GraficoCreadoRequest, db: Session = 
     grafico_repo = GraficoRepository(db)
     nuevo_grafico = grafico_repo.create(archivo_id=archivo_id,columna_id=datos.columna_id,
                         tipo_grafico=datos.tipo_grafico, etiquetas=datos_calculo_grafico["etiquetas"],
-                        valores=datos_calculo_grafico["valores"])
+                        valores=datos_calculo_grafico["valores"], nombre=datos.nombre_grafico)
     db.commit()
     db.refresh(nuevo_grafico)
     

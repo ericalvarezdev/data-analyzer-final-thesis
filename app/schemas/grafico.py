@@ -28,6 +28,6 @@ class GraficoGeneradoResponse(BaseModel):
 class GraficoCreadoRequest(BaseModel):
     columna_id: int
     tipo_grafico: str
-    nombre: str|None = None
+    nombre_grafico: str|None = None
         
     

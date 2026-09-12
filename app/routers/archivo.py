@@ -8,13 +8,10 @@ from app.models.archivo_subido import ArchivoSubido
 from app.schemas.archivo import ArchivoSubidoResponse
 from app.services.procesamiento import leer_archivo, analizar_columnas
 from app.repositories.archivo_repository import ArchivoRepository
-
+from app.config import settings
 
 router = APIRouter(prefix="/archivos", tags=["archivos"])
 
-
-FORMATOS_PERMITIDOS = ["xlsx", "csv"]
-TAMAÑO_MAXIMO_MB = 10
 
 
 # enpoint para subir un archivo
@@ -23,18 +20,18 @@ def subir_archivo(file: UploadFile = File(...), db: Session = Depends(get_db)):
     
     # VALIDAMOS EL FORMATO DEL ARCHIVO
     extension = file.filename.split(".")[-1].lower() # El -1 significa coger el último elemento de la lista que devuelve split()
-    if extension not in FORMATOS_PERMITIDOS:
+    if extension not in settings.formatos_permitidos:
         raise HTTPException(status_code=400, detail="Formato de archivo no permitido")
     
     # GUARDO EL ARCHIVO FÍSICAMENTE EN EL DISCO
-    ruta_destino = f"uploads/{file.filename}"
-    os.makedirs("uploads", exist_ok=True) # Si no existe la carpeta uploads la crea, exist_ok hace que no de error si ya existe
+    ruta_destino = f"{settings.upload_dir}/{file.filename}"
+    os.makedirs(settings.upload_dir, exist_ok=True) # Si no existe la carpeta uploads la crea, exist_ok hace que no de error si ya existe
     with open(ruta_destino, "wb") as buffer: # crea/abre el archivo vacío en esa ruta, "wb" es para que se pueda escribir en el
         shutil.copyfileobj(file.file, buffer) # copia el archivo subido por el usuario (file.file) al archivo vacío "buffer"
         
     # VALIDO EL TAMAÑO DEL ARCHIVO
     tamaño_bytes = os.path.getsize(ruta_destino)
-    if tamaño_bytes > TAMAÑO_MAXIMO_MB * 1024 * 1024:
+    if tamaño_bytes > settings.tamaño_maximo_mb * 1024 * 1024:
         os.remove(ruta_destino) # Borramos el archivo guardado anteriormente
         raise HTTPException(status_code=400, detail="El archivo supera el tamaño máximo permitido")
     
@@ -124,7 +121,22 @@ def previsualizar_archivo(archivo_id: int, filas: int = 10, db: Session = Depend
         }
     """
 
+
+# endpoint que borra un archivo, y todos sus graficos y columnas (en cascada) por id de archivo
+@router.delete("/{archivo_id}", status_code=204)
+def borrar_archivo(archivo_id: int, db: Session = Depends(get_db)):
+    archivo_repo = ArchivoRepository(db)
+    archivo = archivo_repo.get(archivo_id)
     
+    if archivo is None:
+        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+    
+    # borro el archivo físico del disco
+    if os.path.exists(archivo.ruta_almacenamiento):
+        os.remove(archivo.ruta_almacenamiento)
+    
+    archivo_repo.delete(archivo)
+    db.commit()
 
 
     

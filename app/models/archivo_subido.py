@@ -19,8 +19,9 @@ class ArchivoSubido(Base):
     fecha_subida = Column(DateTime, default=datetime.utcnow)
     hoja_seleccionada = Column(String, nullable=True) # lo usaré en el futuro cuando de la opción de seleccionar hoja
     
-    columnas = relationship("Columna", back_populates="archivo")
-    graficos = relationship("GraficoGenerado", back_populates="archivo")
+    # cascade="all, delete-orphan" si se borra un archivo se borrarán todos sus gráficos y columnas
+    columnas = relationship("Columna", back_populates="archivo", cascade="all, delete-orphan")
+    graficos = relationship("GraficoGenerado", back_populates="archivo", cascade="all, delete-orphan")
     
 
     # El ForeignKey guarda el número que conecta las tablas

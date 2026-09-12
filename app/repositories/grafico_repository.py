@@ -10,7 +10,7 @@ class GraficoRepository:
     # guarda un nuevo gráfico en la base de datos
     def create(self, archivo_id: int, columna_id: int,
                tipo_grafico: str, etiquetas: list[str], valores: list[int],
-               nombre: str|None = None) -> GraficoGenerado:
+               nombre: str) -> GraficoGenerado:
         
         grafico = GraficoGenerado(archivo_id=archivo_id, columna_id=columna_id,
                                   tipo_grafico=tipo_grafico, nombre=nombre, etiquetas=etiquetas,

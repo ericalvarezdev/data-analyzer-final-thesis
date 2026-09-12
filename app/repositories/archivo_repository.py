@@ -74,7 +74,16 @@ class ArchivoRepository:
         graficos = relationship("GraficoGenerado", back_populates="archivo")
         """
     
+    
     # Devuelve todos los archivos ordenados del mas reciente al mas antiguo
     def list_all(self) -> list[ArchivoSubido]:
         archivos = self.db.query(ArchivoSubido).order_by(ArchivoSubido.fecha_subida.desc()).all()
         return archivos
+    
+    
+    # Elimina un archivo, sus columnas y gráficas, ya que el borrado es en cascada
+    def delete(self, archivo: ArchivoSubido) -> None:
+        self.db.delete(archivo)
+        
+    
+    
