@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
+from sqlalchemy import JSON, Column, Integer, String, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.database import Base
@@ -13,6 +13,9 @@ class GraficoGenerado(Base):
     nombre = Column(String, nullable=True)
     tipo_grafico = Column(String, nullable=False)
     fecha_creacion = Column(DateTime, default=datetime.utcnow) # Cuando apunte a informe la fecha de creación ya estará en informe y no en gráfoico generado
+    
+    etiquetas = Column(JSON, nullable=True)
+    valores = Column(JSON, nullable=True)
     
     archivo = relationship("ArchivoSubido", back_populates="graficos")
     columna = relationship("Columna", back_populates="graficos")

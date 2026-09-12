@@ -36,17 +36,30 @@ def generar_grafico(archivo_id: int, datos: GraficoCreadoRequest, db: Session = 
     if columna is None or columna.archivo_id != archivo_id:
         raise HTTPException(status_code=404, detail="La columna no existe o no es de este archivo")
     
-    print("antes")
     # calculo los datos del gráfico
-    generar_datos_grafico(ruta_archivo=archivo.ruta_almacenamiento, formato =archivo.formato,
+    datos_calculo_grafico = generar_datos_grafico(ruta_archivo=archivo.ruta_almacenamiento, formato =archivo.formato,
                           nombre_columna=columna.nombre_columna)
-    print("despues")
 
     # guardo el registro de el gráfico generado (no el gráfico con las frecuencias en si)
     grafico_repo = GraficoRepository(db)
     nuevo_grafico = grafico_repo.create(archivo_id=archivo_id,columna_id=datos.columna_id,
-                        tipo_grafico=datos.tipo_grafico)
+                        tipo_grafico=datos.tipo_grafico, etiquetas=datos_calculo_grafico["etiquetas"],
+                        valores=datos_calculo_grafico["valores"])
     db.commit()
     db.refresh(nuevo_grafico)
     
     return nuevo_grafico
+
+
+@router.get("/{grafico_id}", response_model=GraficoGeneradoResponse)
+def obtener_grafico(archivo_id: int, grafico_id: int, db: Session = Depends(get_db)):
+    grafico_repo = GraficoRepository(db)
+    
+    grafico = grafico_repo.get(grafico_id)
+    
+    # Compruebo que el gráfico existe y que es del archivo indicado
+    # evitando que nadie se cuele
+    if grafico is None or grafico.archivo_id != archivo_id:
+        raise HTTPException(status_code=404, detail="Grafico no encontrado para este archivo")
+    
+    return grafico

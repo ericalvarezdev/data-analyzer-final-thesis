@@ -9,10 +9,12 @@ class GraficoRepository:
     
     # guarda un nuevo gráfico en la base de datos
     def create(self, archivo_id: int, columna_id: int,
-               tipo_grafico: str, nombre: str|None = None) -> GraficoGenerado:
+               tipo_grafico: str, etiquetas: list[str], valores: list[int],
+               nombre: str|None = None) -> GraficoGenerado:
         
         grafico = GraficoGenerado(archivo_id=archivo_id, columna_id=columna_id,
-                                  tipo_grafico=tipo_grafico, nombre=nombre)
+                                  tipo_grafico=tipo_grafico, nombre=nombre, etiquetas=etiquetas,
+                                  valores=valores)
         
         self.db.add(grafico)
         self.db.flush() # necesitamos el id enseguida para devolverlo en la respuesta

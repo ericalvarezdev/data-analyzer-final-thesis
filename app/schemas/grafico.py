@@ -17,6 +17,9 @@ class GraficoGeneradoResponse(BaseModel):
     columna: ColumnaResponse 
     fecha_creacion: datetime # en siguientes iteraciones la fecha vendrá en el informe y no el gráfico
     
+    etiquetas: list[str]
+    valores: list[int]
+    
     
     class Config:
         from_attributes = True
