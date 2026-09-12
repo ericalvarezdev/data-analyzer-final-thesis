@@ -27,3 +27,8 @@ class GraficoRepository:
         return grafico
     
     
+    # devuelve todos los graficos del archivo
+    def list_by_archivo(self, archivo_id) -> list[GraficoGenerado]:
+        graficos = self.db.query(GraficoGenerado).filter(archivo_id == GraficoGenerado.archivo_id).all()
+        return graficos
+    

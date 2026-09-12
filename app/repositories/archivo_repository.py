@@ -73,3 +73,8 @@ class ArchivoRepository:
         columnas = relationship("Columna", back_populates="archivo")
         graficos = relationship("GraficoGenerado", back_populates="archivo")
         """
+    
+    # Devuelve todos los archivos ordenados del mas reciente al mas antiguo
+    def list_all(self) -> list[ArchivoSubido]:
+        archivos = self.db.query(ArchivoSubido).order_by(ArchivoSubido.fecha_subida.desc()).all()
+        return archivos

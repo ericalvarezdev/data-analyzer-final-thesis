@@ -40,7 +40,8 @@ def analizar_columnas(df: pd.DataFrame, archivo_id: int, db: Session):
     columna_repo = ColumnaRepository(db)
     
     # Recorro cada columna del archivo con df.columns
-    for nombre_columna in df.columns:
+    # el enumerate da en cada vuelta la posición (0,1,2...)
+    for posicion, nombre_columna in enumerate(df.columns):
         serie = df[nombre_columna]
         tipo = inferir_tipo(serie)
         
@@ -56,7 +57,7 @@ def analizar_columnas(df: pd.DataFrame, archivo_id: int, db: Session):
         # Creamos el registro Columna da través del repositorio, pero aun no se guarda
         # de forma permanente, solo lo apunta dentro de la sessión para guardarlo más
         # tarde en la base de datos usando el commit
-        columna_repo.create(archivo_id=archivo_id, nombre_columna=nombre_columna,
+        columna_repo.create(archivo_id=archivo_id, nombre_columna=nombre_columna, posicion=posicion,
                             tipo_dato=tipo,contador_valores_nulos=contador_valores_nulos,
                             valor_minimo=valor_minimo,valor_maximo=valor_maximo,
                             media=media)

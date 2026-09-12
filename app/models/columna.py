@@ -9,6 +9,7 @@ class Columna(Base):
     id = Column(Integer, primary_key=True, index=True)
     archivo_id = Column(Integer, ForeignKey("archivos_subidos.id"), nullable=False)
     nombre_columna = Column(String, nullable=False)
+    posicion = Column(Integer, nullable=False) # posición de la columna dentro de el archivo
     tipo_dato = Column(String, nullable=True )
     contador_valores_nulos = Column(Integer, nullable=True)
     valor_minimo = Column(String, nullable=True)

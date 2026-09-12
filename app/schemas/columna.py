@@ -8,6 +8,7 @@ class ColumnaResponse(BaseModel):
     id: int
     nombre_columna: str
     archivo_id: int # aqui al solo guardar el id y no el objeto entero no se crea referencia circular
+    posicion: int
     tipo_dato: Optional[str]
     contador_valores_nulos: Optional[int]
     valor_minimo: Optional[str]

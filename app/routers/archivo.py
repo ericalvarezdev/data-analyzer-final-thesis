@@ -4,6 +4,7 @@ from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.models.archivo_subido import ArchivoSubido
 from app.schemas.archivo import ArchivoSubidoResponse
 from app.services.procesamiento import leer_archivo, analizar_columnas
 from app.repositories.archivo_repository import ArchivoRepository
@@ -63,7 +64,27 @@ def subir_archivo(file: UploadFile = File(...), db: Session = Depends(get_db)):
     db.refresh(nuevo_archivo)
     
     return nuevo_archivo
+
+
+# endpoint para obtener las datos de un archivo subido (no es la previsualización del archivo)
+@router.get("/{archivo_id}", response_model=ArchivoSubidoResponse)
+def obtener_archivo(archivo_id: int, db: Session = Depends(get_db)):
+    archivo_repo = ArchivoRepository(db)
+    archivo = archivo_repo.get(archivo_id)
     
+    if archivo is None:
+        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+    
+    return archivo
+
+
+# devuelve la lista de archivos de toda la base de datos, más adelante solo devolverá del usuario
+@router.get("/", response_model=list[ArchivoSubidoResponse]|None)
+def listar_archivos(db: Session = Depends(get_db)):
+    archivo_repo = ArchivoRepository(db)
+    list_archivos = archivo_repo.list_all()
+    return list_archivos
+
 
 # endpoint para previsualizar las x filas que elija el usuario (por defecto 10)
 @router.get("/{archivo_id}/preview")
@@ -104,6 +125,6 @@ def previsualizar_archivo(archivo_id: int, filas: int = 10, db: Session = Depend
     """
 
     
-    
+
 
     

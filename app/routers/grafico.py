@@ -1,4 +1,6 @@
 
+from turtle import pos
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -38,7 +40,7 @@ def generar_grafico(archivo_id: int, datos: GraficoCreadoRequest, db: Session = 
     
     # calculo los datos del gráfico
     datos_calculo_grafico = generar_datos_grafico(ruta_archivo=archivo.ruta_almacenamiento, formato =archivo.formato,
-                          nombre_columna=columna.nombre_columna)
+                          posicion_columna=columna.posicion)
 
     # guardo el registro de el gráfico generado (no el gráfico con las frecuencias en si)
     grafico_repo = GraficoRepository(db)
@@ -51,6 +53,7 @@ def generar_grafico(archivo_id: int, datos: GraficoCreadoRequest, db: Session = 
     return nuevo_grafico
 
 
+# endpoint que devuelve el gráfico buscado por id
 @router.get("/{grafico_id}", response_model=GraficoGeneradoResponse)
 def obtener_grafico(archivo_id: int, grafico_id: int, db: Session = Depends(get_db)):
     grafico_repo = GraficoRepository(db)
@@ -63,3 +66,16 @@ def obtener_grafico(archivo_id: int, grafico_id: int, db: Session = Depends(get_
         raise HTTPException(status_code=404, detail="Grafico no encontrado para este archivo")
     
     return grafico
+
+
+# devuelve todos los graficos generados a partir de un archivo
+@router.get("/",response_model=list[GraficoGeneradoResponse]|None)
+def listar_graficos_de_archivo(archivo_id: int, db: Session = Depends(get_db)):
+    archivo_repo = ArchivoRepository(db)
+    archivo = archivo_repo.get(archivo_id)
+    if archivo is None:
+        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+    
+    grafico_repo = GraficoRepository(db)
+    graficos = grafico_repo.list_by_archivo(archivo_id)
+    return graficos

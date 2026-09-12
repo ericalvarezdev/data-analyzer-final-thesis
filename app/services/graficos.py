@@ -8,10 +8,12 @@ TIPOS_VALIDOS = {"barras","lineas","tarta"}
 # Lee el archivo de nuevo, y calcula para la columna elegida, cuantas veces
 # aparece cada elemento (frecuencia de elementos)
 # para la primera iteración de momento solo haré el gráfico de frecuencias
-def generar_datos_grafico(ruta_archivo: str, formato: str, nombre_columna: str) -> dict:
+def generar_datos_grafico(ruta_archivo: str, formato: str, posicion_columna: int) -> dict:
     
     df = leer_archivo(ruta_archivo,formato)
-    serie = df[nombre_columna] # Aqui si el nombre_columna se repito dos veces o más en el archivo daría error
+    
+    # df.iloc[:, X]  selecciona la COLUMNA en la posición X (todas las filas), sin el : selecciona la fila de la posición X
+    serie = df.iloc[:,posicion_columna]
     
     # value_counts calcula cuantas veces aparece cada valor distinto (frecuencia)
     # y los ordena de más a menos

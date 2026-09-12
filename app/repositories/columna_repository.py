@@ -8,11 +8,11 @@ class ColumnaRepository:
         self.db = db
     
     # crea una columna    
-    def create(self, archivo_id: int, nombre_columna: str, tipo_dato: str,
+    def create(self, archivo_id: int, nombre_columna: str, posicion: int, tipo_dato: str,
                contador_valores_nulos: int|None, valor_minimo: str|None, valor_maximo: str|None,
                media: float|None) -> Columna:
         
-        columna = Columna(archivo_id=archivo_id, nombre_columna=nombre_columna,
+        columna = Columna(archivo_id=archivo_id, nombre_columna=nombre_columna, posicion=posicion,
                           contador_valores_nulos=contador_valores_nulos,
                           valor_minimo=valor_minimo, valor_maximo=valor_maximo,
                           media=media, tipo_dato=tipo_dato)
