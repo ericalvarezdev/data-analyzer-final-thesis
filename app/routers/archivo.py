@@ -3,20 +3,24 @@ import shutil
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.auth_dependency import get_current_user
 from app.database import get_db
+from app.models import usuario
 from app.models.archivo_subido import ArchivoSubido
+from app.models.usuario import Usuario
 from app.schemas.archivo import ArchivoSubidoResponse
 from app.services.procesamiento import leer_archivo, analizar_columnas
 from app.repositories.archivo_repository import ArchivoRepository
 from app.config import settings
 
-router = APIRouter(prefix="/archivos", tags=["archivos"])
+router = APIRouter(prefix="/archivos", tags=["Archivos"])
 
 
 
 # enpoint para subir un archivo
 @router.post("/", response_model=ArchivoSubidoResponse)
-def subir_archivo(file: UploadFile = File(...), db: Session = Depends(get_db)):
+def subir_archivo(file: UploadFile = File(...),
+                  db: Session = Depends(get_db), usuario_actual: Usuario = Depends(get_current_user)):
     
     # VALIDAMOS EL FORMATO DEL ARCHIVO
     extension = file.filename.split(".")[-1].lower() # El -1 significa coger el último elemento de la lista que devuelve split()
@@ -37,8 +41,10 @@ def subir_archivo(file: UploadFile = File(...), db: Session = Depends(get_db)):
     
     # GUARDO EL ARCHIVO EN LA BASE DE DATOS (EN "PROCESAMIENTO")
     archivo_repo = ArchivoRepository(db)
-    nuevo_archivo = archivo_repo.create(nombre_archivo=file.filename, ruta_almacenamiento=ruta_destino,
-                        formato=extension, tamaño=tamaño_bytes)
+    nuevo_archivo = archivo_repo.create(usuario_id=usuario_actual.id,
+                                        nombre_archivo=file.filename, 
+                                        ruta_almacenamiento=ruta_destino,
+                                        formato=extension, tamaño=tamaño_bytes)
     db.commit() # Lo guardamos en la base de datos y generamos el id
     
     # PROCESO EL ARCHVIO CON PANDAS
@@ -65,33 +71,35 @@ def subir_archivo(file: UploadFile = File(...), db: Session = Depends(get_db)):
 
 # endpoint para obtener las datos de un archivo subido (no es la previsualización del archivo)
 @router.get("/{archivo_id}", response_model=ArchivoSubidoResponse)
-def obtener_archivo(archivo_id: int, db: Session = Depends(get_db)):
+def obtener_archivo(archivo_id: int, db: Session = Depends(get_db),
+                    usuario_actual: Usuario = Depends(get_current_user)):
     archivo_repo = ArchivoRepository(db)
     archivo = archivo_repo.get(archivo_id)
     
-    if archivo is None:
+    if archivo is None or archivo.usuario_id != usuario_actual.id:
         raise HTTPException(status_code=404, detail="Archivo no encontrado")
     
     return archivo
 
 
-# devuelve la lista de archivos de toda la base de datos, más adelante solo devolverá del usuario
+# devuelve la lista de archivos de un usuario en concreto
 @router.get("/", response_model=list[ArchivoSubidoResponse]|None)
-def listar_archivos(db: Session = Depends(get_db)):
+def listar_archivos(db: Session = Depends(get_db), usuario_actual: Usuario = Depends(get_current_user)):
     archivo_repo = ArchivoRepository(db)
-    list_archivos = archivo_repo.list_all()
+    list_archivos = archivo_repo.list_by_usuario(usuario_actual.id)
     return list_archivos
 
 
 # endpoint para previsualizar las x filas que elija el usuario (por defecto 10)
 @router.get("/{archivo_id}/preview")
-def previsualizar_archivo(archivo_id: int, filas: int = 10, db: Session = Depends(get_db)):
+def previsualizar_archivo(archivo_id: int, filas: int = 10, db: Session = Depends(get_db),
+                          usuario_actual: Usuario = Depends(get_current_user)):
     
     archivo_repo = ArchivoRepository(db)
     archivo = archivo_repo.get(archivo_id)
     
     # Si el archivo no existe devolvemos un error
-    if archivo is None:
+    if archivo is None or archivo.usuario_id != usuario_actual.id:
         raise HTTPException(status_code=404, detail="Archivo no encontrado")
     
     # Transformo el archivo en un dataframe
@@ -124,11 +132,12 @@ def previsualizar_archivo(archivo_id: int, filas: int = 10, db: Session = Depend
 
 # endpoint que borra un archivo, y todos sus graficos y columnas (en cascada) por id de archivo
 @router.delete("/{archivo_id}", status_code=204)
-def borrar_archivo(archivo_id: int, db: Session = Depends(get_db)):
+def borrar_archivo(archivo_id: int, db: Session = Depends(get_db),
+                   usuario_actual: Usuario = Depends(get_current_user)):
     archivo_repo = ArchivoRepository(db)
     archivo = archivo_repo.get(archivo_id)
     
-    if archivo is None:
+    if archivo is None or archivo.usuario_id != usuario_actual.id:
         raise HTTPException(status_code=404, detail="Archivo no encontrado")
     
     # borro el archivo físico del disco
@@ -139,4 +148,3 @@ def borrar_archivo(archivo_id: int, db: Session = Depends(get_db)):
     db.commit()
 
 
-    

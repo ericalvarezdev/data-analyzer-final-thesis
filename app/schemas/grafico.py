@@ -4,30 +4,44 @@ from datetime import datetime
 from pydantic import BaseModel
 
 from app.schemas.columna import ColumnaResponse
+from app.schemas.filtro import FiltroRequest, FiltroResponse
+
+
+class GraficoCreadoRequest(BaseModel):
+    columna_x_id: int
+    columna_y_id: int
+    operacion_agregacion: str = "recuento"
+
+    tipo_grafico: str
+    nombre_grafico: str|None = None
+    
+    
+    filtros: list[FiltroRequest] = []
+    
 
 
 class GraficoGeneradoResponse(BaseModel):
     id: int
-    archivo_id: int
+    informe_id: int
     nombre: str|None
     tipo_grafico: str
-    
-    # como en la primera iteración un gráfico solo puede ser de una columna lo hago asi
+        
     # no hay riesgo de bucle porque ColumnaResponse no contiene ningún GraficoGeneradoResponse
-    columna: ColumnaResponse 
-    fecha_creacion: datetime # en siguientes iteraciones la fecha vendrá en el informe y no el gráfico
+    columna_x: ColumnaResponse
+    columna_y: ColumnaResponse | None
+    filtros: list[FiltroResponse] = []
+    operacion_agregacion: str
+
     
     etiquetas: list[str]
-    valores: list[int]
+    valores: list[float]
     
-    
+    fecha_creacion: datetime
+
     class Config:
         from_attributes = True
         
 
-class GraficoCreadoRequest(BaseModel):
-    columna_id: int
-    tipo_grafico: str
-    nombre_grafico: str|None = None
+
         
     

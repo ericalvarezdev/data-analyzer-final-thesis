@@ -11,12 +11,15 @@ class ArchivoRepository:
     
     
     # Crea un nuevo archivo
-    def create(self, nombre_archivo: str,
+    def create(self, usuario_id: int, nombre_archivo: str,
                ruta_almacenamiento: str, formato: str,
                tamaño: str) -> ArchivoSubido:
         
-        archivo = ArchivoSubido(nombre_archivo=nombre_archivo, ruta_almacenamiento=ruta_almacenamiento,
-                                formato=formato, tamaño=tamaño, estado_procesamiento="procesando")
+        archivo = ArchivoSubido(usuario_id=usuario_id,
+                                nombre_archivo=nombre_archivo, 
+                                ruta_almacenamiento=ruta_almacenamiento,
+                                formato=formato, tamaño=tamaño, 
+                                estado_procesamiento="procesando")
          
         self.db.add(archivo)
         self.db.flush()
@@ -86,4 +89,8 @@ class ArchivoRepository:
         self.db.delete(archivo)
         
     
+    # Devuelve todos los archivos de un usuario en concreto en orden de fecha de subida
+    def list_by_usuario(self, usuario_id) -> list[ArchivoSubido] | None:
+        archivos = self.db.query(ArchivoSubido).filter(ArchivoSubido.usuario_id == usuario_id).order_by(ArchivoSubido.fecha_subida.desc()).all()
+        return archivos
     

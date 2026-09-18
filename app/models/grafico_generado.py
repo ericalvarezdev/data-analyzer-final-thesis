@@ -8,8 +8,12 @@ class GraficoGenerado(Base):
     __tablename__ = "graficos_generados"
     
     id = Column(Integer, primary_key=True, index=True)
-    archivo_id = Column(Integer, ForeignKey("archivos_subidos.id"), nullable=False) # En próximas iteraciones el gráfico generado apuntara al informe generado y no al archivo generado
-    columna_id = Column(Integer, ForeignKey("columnas.id"), nullable=False)
+    informe_id = Column(Integer, ForeignKey("informes_generados.id"), nullable=False)
+
+    columna_x_id = Column(Integer, ForeignKey("columnas.id"), nullable=False)
+    columna_y_id = Column(Integer, ForeignKey("columnas.id"), nullable=True)
+    operacion_agregacion = Column(String, nullable=False, default="recuento")
+    
     nombre = Column(String, nullable=True)
     tipo_grafico = Column(String, nullable=False)
     fecha_creacion = Column(DateTime, default=datetime.utcnow) # Cuando apunte a informe la fecha de creación ya estará en informe y no en gráfoico generado
@@ -17,9 +21,13 @@ class GraficoGenerado(Base):
     etiquetas = Column(JSON, nullable=True)
     valores = Column(JSON, nullable=True)
     
-    archivo = relationship("ArchivoSubido", back_populates="graficos")
-    columna = relationship("Columna", back_populates="graficos")
+    # Como hay dos claves foráneas que provienen de la misma tabla "Columna" hay que indicar
+    # SQLAlchemy no puede adivinar cual usa en cada relación, por eso hay que indicarselo explícitamente
+    # con foreign_keys[]
+    columna_x = relationship("Columna", foreign_keys=[columna_x_id], back_populates="graficos_x")
+    columna_y = relationship("Columna", foreign_keys=[columna_y_id], back_populates="graficos_y")
 
+    
+    informe = relationship("InformeGenerado", back_populates="graficos")
+    filtros = relationship("FiltroAplicado", back_populates="grafico", cascade="all, delete-orphan")
 
-# Como es la primera iteración solo generaré gráficos de una sola columna para simplificarlo un poco debido
-# a que si no habria que crear otra clase intermedia ya que la cardinalidad seria de muchos a muchos

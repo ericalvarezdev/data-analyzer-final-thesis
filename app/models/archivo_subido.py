@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime
+from sqlalchemy import Column, ForeignKey, Integer, String, DateTime
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.database import Base
@@ -8,6 +8,7 @@ class ArchivoSubido(Base):
     __tablename__ = "archivos_subidos"
     
     id = Column(Integer, primary_key=True, index=True)
+    usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
     nombre_archivo = Column(String, nullable=False)
     ruta_almacenamiento = Column(String, nullable=False)
     formato = Column(String, nullable=False)
@@ -20,8 +21,9 @@ class ArchivoSubido(Base):
     hoja_seleccionada = Column(String, nullable=True) # lo usaré en el futuro cuando de la opción de seleccionar hoja
     
     # cascade="all, delete-orphan" si se borra un archivo se borrarán todos sus gráficos y columnas
+    usuario = relationship("Usuario", back_populates="archivos") # el delete cascade va solo en usuario porque sino al borrar un archivo tambien se borraria el usuario
     columnas = relationship("Columna", back_populates="archivo", cascade="all, delete-orphan")
-    graficos = relationship("GraficoGenerado", back_populates="archivo", cascade="all, delete-orphan")
+    informes = relationship("InformeGenerado", back_populates="archivo", cascade="all, delete-orphan")
     
 
     # El ForeignKey guarda el número que conecta las tablas
