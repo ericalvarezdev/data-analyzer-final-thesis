@@ -34,3 +34,13 @@ class InformeRepository:
         return informes
 
 
+    # borra el informe que recibe por parámetro
+    # al borrar el informe se borrará en cascada todos sus gráficos y los filtros de esos gráficos
+    def delete(self, informe: InformeGenerado) -> None:
+        self.db.delete(informe)
+
+
+    # actualiza el nombre de un informe
+    def actualizar_informe(self, informe: InformeGenerado, nuevo_nombre: str) -> InformeGenerado:
+        informe.nombre = nuevo_nombre
+        return informe

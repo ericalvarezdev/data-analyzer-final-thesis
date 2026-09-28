@@ -3,11 +3,11 @@ from sqlalchemy.orm import Session
 from app.models.columna import Columna
 from app.repositories.columna_repository import ColumnaRepository
 
-# Convierte el archivo en un dataframe de pandas, que es como
-# que representa el archivo en forma de tabla con filas y columnas
+# Convierto el archivo en un dataframe de pandas, que es como
+# se representa el archivo en forma de tabla con filas y columnas
 def leer_archivo(ruta: str, formato:str) -> pd.DataFrame:
-    # Comprobamos que el formato sea excel o csv
-    # y devolvemos convertimos el archivo en un dataframe
+    # Compruebo que el formato sea excel o csv
+    # y devuelvo el archivo en forma de un dataframe
     if formato == "csv":
         return pd.read_csv(ruta)
     if formato == "xlsx":
@@ -54,7 +54,7 @@ def analizar_columnas(df: pd.DataFrame, archivo_id: int, db: Session):
         
         contador_valores_nulos = int(serie.isnull().sum())
         
-        # Creamos el registro Columna da través del repositorio, pero aun no se guarda
+        # Creo el registro Columna da través del repositorio, pero aun no se guarda
         # de forma permanente, solo lo apunta dentro de la sessión para guardarlo más
         # tarde en la base de datos usando el commit
         columna_repo.create(archivo_id=archivo_id, nombre_columna=nombre_columna, posicion=posicion,
@@ -62,7 +62,7 @@ def analizar_columnas(df: pd.DataFrame, archivo_id: int, db: Session):
                             valor_minimo=valor_minimo,valor_maximo=valor_maximo,
                             media=media)
     
-    # Cuando el bucle termina enviamos todas las columnas creadas a la base de datos
+    # Cuando el bucle termina envio todas las columnas creadas a la base de datos
     db.commit()
         
         

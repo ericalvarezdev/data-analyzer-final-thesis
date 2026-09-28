@@ -22,7 +22,7 @@ def aplicar_filtros(df: pd.DataFrame, filtros: list[dict]) -> pd.DataFrame:
     for filtro in filtros:
         # recalculo la serie a partir del dataframe ya filtrado y no del original
         # para así poder aplicar filtros sobre filtros
-        serie = df.iloc[:, filtro["posicion"]] # Obtengo todas las filas de la columna indicada por su posición (el : significa todas las filas)
+        serie = df.iloc[:, filtro["posicion"]] # Es el índice de la columna dentro del dataframe
         tipo = filtro["tipo_filtro"]
         valores = filtro["valores"]
         
@@ -70,6 +70,7 @@ def calcular_datos_grafico(df: pd.DataFrame, posicion_x: int,
     }
     
 
+# primero aplico filtros y luego calculo los datos del gráfico con el df ya filtrado
 def generar_datos_grafico(ruta_archivo: str, formato: str, posicion_x: int,
                           posicion_y: int | None, operacion: str,
                           filtros: list[dict]) -> dict:

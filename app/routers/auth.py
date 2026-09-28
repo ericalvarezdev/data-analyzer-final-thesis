@@ -7,6 +7,9 @@ from app.schemas.usuario import UsuarioCreateRequest, LoginRequest, UsuarioRespo
 from app.repositories.usuario_repository import UsuarioRepository
 from app.security import hashear_contraseña, verificar_contraseña, crear_token_acceso
 from fastapi.security import OAuth2PasswordRequestForm
+from app.auth_dependency import get_current_user
+from app.models.usuario import Usuario
+
 
 router = APIRouter(prefix="/auth", tags=["Autenticación"])
 
@@ -43,5 +46,11 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     # si el gmail y la contraseña son correctos creo el token de acceso y lo devuelvo
     token = crear_token_acceso(usuario.id)
     return TokenResponse(access_token=token)
-    
+
+
+
+@router.get("/me", response_model=UsuarioResponse)
+def obtener_usuario_actual(usuario_actual: Usuario = Depends(get_current_user)):
+    return usuario_actual
+
     

@@ -2,6 +2,7 @@ import os
 import shutil
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
 from sqlalchemy.orm import Session
+import uuid
 
 from app.auth_dependency import get_current_user
 from app.database import get_db
@@ -28,12 +29,16 @@ def subir_archivo(file: UploadFile = File(...),
         raise HTTPException(status_code=400, detail="Formato de archivo no permitido")
     
     # GUARDO EL ARCHIVO FÍSICAMENTE EN EL DISCO
-    ruta_destino = f"{settings.upload_dir}/{file.filename}"
+    # genero un nombre físico único así dos archivos con el mismo nombre original nunca chocaran en disco.
+    # el nombre original se conserva igualmente a parte en nombre_archivo 
+    # por lo tanto el usuario siempre verá el nombre original
+    nombre_fisico = f"{uuid.uuid4()}.{extension}"
+    ruta_destino =f"{settings.upload_dir}/{nombre_fisico}"
     os.makedirs(settings.upload_dir, exist_ok=True) # Si no existe la carpeta uploads la crea, exist_ok hace que no de error si ya existe
     with open(ruta_destino, "wb") as buffer: # crea/abre el archivo vacío en esa ruta, "wb" es para que se pueda escribir en el
         shutil.copyfileobj(file.file, buffer) # copia el archivo subido por el usuario (file.file) al archivo vacío "buffer"
         
-    # VALIDO EL TAMAÑO DEL ARCHIVO
+    # VALIDO EL TAMAÑO DEL ARCHIVO 
     tamaño_bytes = os.path.getsize(ruta_destino)
     if tamaño_bytes > settings.tamaño_maximo_mb * 1024 * 1024:
         os.remove(ruta_destino) # Borramos el archivo guardado anteriormente

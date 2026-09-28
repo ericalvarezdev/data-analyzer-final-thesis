@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.auth_dependency import get_current_user
 from app.models.usuario import Usuario
-from app.schemas.informe import InformeCreateRequest, InformeResponse
+from app.schemas.informe import InformeCreateRequest, InformeResponse, InformeUpdateRequest
 from app.repositories.archivo_repository import ArchivoRepository
 from app.repositories.informe_repository import InformeRepository
 
@@ -65,3 +65,35 @@ def listar_informes_de_usuario(db: Session = Depends(get_db),
                                usuario_actual: Usuario = Depends(get_current_user)):
     informe_repo = InformeRepository(db)
     return informe_repo.list_by_usuario(usuario_actual.id)
+
+
+@router_informes.delete("/{informe_id}", status_code=204)
+def borrar_informe(informe_id: int,
+                   db: Session = Depends(get_db),
+                   usuario_actual: Usuario = Depends(get_current_user)):
+    informe_repo = InformeRepository(db)
+    informe = informe_repo.get(informe_id)
+    if(informe is None or informe.usuario_id != usuario_actual.id):
+        raise HTTPException(status_code=404, detail="Informe no encontrado")
+    
+    informe_repo.delete(informe)
+    db.commit()
+    
+    return None
+
+
+@router_informes.patch("/{informe_id}", response_model = InformeResponse)
+def renombrar_informe(informe_id: int,
+                      datos: InformeUpdateRequest,
+                      db: Session = Depends(get_db),
+                      usuario_actual: Usuario = Depends(get_current_user)):
+    informe_repo = InformeRepository(db)
+    informe = informe_repo.get(informe_id)
+    
+    if(informe is None or informe.usuario_id != usuario_actual.id):
+        raise HTTPException(status_code=404, detail="Informe no encontrado")
+    
+    informe_actualizado = informe_repo.actualizar_informe(informe,datos.nombre)
+    db.commit()
+    db.refresh(informe_actualizado)
+    return informe_actualizado

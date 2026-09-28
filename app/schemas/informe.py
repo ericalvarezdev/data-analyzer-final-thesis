@@ -18,3 +18,6 @@ class InformeResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
+class InformeUpdateRequest(BaseModel):
+    nombre: str

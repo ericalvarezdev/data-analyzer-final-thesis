@@ -138,7 +138,8 @@ def generar_grafico(informe_id: int, datos: GraficoCreadoRequest,
         
         
         
-    
+
+
 
 # endpoint que devuelve el gráfico buscado por id
 @router.get("/{grafico_id}", response_model=GraficoGeneradoResponse)

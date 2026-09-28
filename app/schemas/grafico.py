@@ -9,7 +9,7 @@ from app.schemas.filtro import FiltroRequest, FiltroResponse
 
 class GraficoCreadoRequest(BaseModel):
     columna_x_id: int
-    columna_y_id: int
+    columna_y_id: int | None = None
     operacion_agregacion: str = "recuento"
 
     tipo_grafico: str
