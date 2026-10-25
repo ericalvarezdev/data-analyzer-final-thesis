@@ -1,6 +1,6 @@
 
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -9,6 +9,7 @@ from app.models.usuario import Usuario
 from app.schemas.informe import InformeCreateRequest, InformeResponse, InformeUpdateRequest
 from app.repositories.archivo_repository import ArchivoRepository
 from app.repositories.informe_repository import InformeRepository
+from app.services.pdf import generar_pdf_informe
 
 
 router = APIRouter(prefix="/archivos/{archivo_id}/informes", tags=["Informes"])
@@ -67,6 +68,18 @@ def listar_informes_de_usuario(db: Session = Depends(get_db),
     return informe_repo.list_by_usuario(usuario_actual.id)
 
 
+@router_informes.get("/{informe_id}", response_model=InformeResponse)
+def obtener_informe(informe_id: int,
+                    db: Session = Depends(get_db),
+                    usuario_actual: Usuario = Depends(get_current_user)):
+    informe_repo = InformeRepository(db)
+    informe = informe_repo.get(informe_id)
+    if(informe is None or informe.usuario_id != usuario_actual.id):
+        raise HTTPException(status_code=404, detail="Informe no encontrado")
+
+    return informe
+
+
 @router_informes.delete("/{informe_id}", status_code=204)
 def borrar_informe(informe_id: int,
                    db: Session = Depends(get_db),
@@ -97,3 +110,24 @@ def renombrar_informe(informe_id: int,
     db.commit()
     db.refresh(informe_actualizado)
     return informe_actualizado
+
+
+# endpoint para descargar un informe entero como PDF con todos sus gráficos
+@router_informes.get("/{informe_id}/pdf")
+def descargar_informe_pdf(informe_id: int,
+                          db: Session = Depends(get_db),
+                          usuario_actual: Usuario = Depends(get_current_user)):
+    informe_repo = InformeRepository(db)
+    informe = informe_repo.get(informe_id)
+
+    if informe is None or informe.usuario_id != usuario_actual.id:
+        raise HTTPException(status_code=404, detail="Informe no encontrado")
+
+    try:
+        pdf_bytes = generar_pdf_informe(informe)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    nombre_archivo = informe.nombre or f"informe_{informe.id}"
+    return Response(content=pdf_bytes, media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{nombre_archivo}.pdf"'})

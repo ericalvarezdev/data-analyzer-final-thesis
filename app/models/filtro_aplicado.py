@@ -15,7 +15,11 @@ class FiltroAplicado(Base):
     # un valor exacto es uno, y una lista pueden ser cinco
     valores = Column(JSON, nullable=False)
     
-
+    # con que se une este filtro al resultado de los filtros anteriores (AND/OR).
+    # en el primer filtro de la lista no se usa para nada, pero lo guardo igual
+    # para no complicar el modelo con un caso especial
+    conector = Column(String, nullable=False, default="AND")
+    
     grafico = relationship("GraficoGenerado", back_populates="filtros")
     columna = relationship("Columna", back_populates="filtros")
 

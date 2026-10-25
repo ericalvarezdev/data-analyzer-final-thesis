@@ -1,8 +1,8 @@
-"""Estado completo: Usuario, Archivo, Columna, Informe, Grafico, Filtro
+"""Cambio graficos a especificacion de plotly
 
-Revision ID: e9cf0d1a3868
-Revises: 
-Create Date: 2026-09-16 00:20:40.735186
+Revision ID: 697ba0fcaaff
+Revises:
+Create Date: 2026-10-01 19:14:22.384910
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'e9cf0d1a3868'
+revision: str = '697ba0fcaaff'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -83,8 +83,7 @@ def upgrade() -> None:
     sa.Column('nombre', sa.String(), nullable=True),
     sa.Column('tipo_grafico', sa.String(), nullable=False),
     sa.Column('fecha_creacion', sa.DateTime(), nullable=True),
-    sa.Column('etiquetas', sa.JSON(), nullable=True),
-    sa.Column('valores', sa.JSON(), nullable=True),
+    sa.Column('especificacion', sa.JSON(), nullable=False),
     sa.ForeignKeyConstraint(['columna_x_id'], ['columnas.id'], ),
     sa.ForeignKeyConstraint(['columna_y_id'], ['columnas.id'], ),
     sa.ForeignKeyConstraint(['informe_id'], ['informes_generados.id'], ),
@@ -97,6 +96,7 @@ def upgrade() -> None:
     sa.Column('columna_id', sa.Integer(), nullable=False),
     sa.Column('tipo_filtro', sa.String(), nullable=False),
     sa.Column('valores', sa.JSON(), nullable=False),
+    sa.Column('conector', sa.String(), nullable=False),
     sa.ForeignKeyConstraint(['columna_id'], ['columnas.id'], ),
     sa.ForeignKeyConstraint(['grafico_id'], ['graficos_generados.id'], ),
     sa.PrimaryKeyConstraint('id')

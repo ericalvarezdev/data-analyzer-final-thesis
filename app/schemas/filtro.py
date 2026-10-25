@@ -6,7 +6,7 @@ class FiltroRequest(BaseModel):
     columna_id: int
     tipo_filtro: str
     valores: list[Any] # Any puede ser texto, número o fecha
-    
+    conector: str = "AND" # AND u OR, con el primer filtro de la lista no se usa
 
 # información que la api devuelve de un filtro
 class FiltroResponse(BaseModel):
@@ -15,6 +15,7 @@ class FiltroResponse(BaseModel):
     columna_id: int
     tipo_filtro: str
     valores: list[Any]
+    conector: str
     
     class Config:
         from_attributes=True

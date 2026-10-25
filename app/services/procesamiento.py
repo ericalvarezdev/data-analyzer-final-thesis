@@ -26,8 +26,22 @@ def inferir_tipo(serie: pd.Series) -> str:
         return "numerico"
     elif pd.api.types.is_datetime64_any_dtype(serie):
         return "fecha"
-    else:
-        return "texto" # si no es ni numerico ni fecha será texto
+    
+    # en un csv las fechas no llegan como fecha de verdad, llegan como texto
+    # (a diferencia del excel, que pandas ya me la da bien), asi que si no es
+    # ni numerico ni fecha de verdad, pruebo a convertirla antes de rendirme
+    if len(serie) > 0:
+        # errors="coerce" convierte los valores que no puede interpretar como fechas en NaT
+        # (fecha no válida), en lugar de dar un error.
+        convertida = pd.to_datetime(serie, errors="coerce")
+        
+        # con que la mayoría de valores se dejen convertir ya cuenta como fecha,
+        # no hace falta que sean el 100% porque siempre puede haber alguna celda
+        # vacía o mal escrita
+        if convertida.notna().sum() / len(serie) >= 0.9:
+            return "fecha"
+    
+    return "texto" # si no es ni numerico ni fecha será texto
 
 
 # Función que recorre todas las columnas del dataframe, analiza su tipo

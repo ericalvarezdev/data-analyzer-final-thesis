@@ -9,10 +9,10 @@ class FiltroRepository:
         
     
     def create(self, grafico_id: int, columna_id: int,
-               tipo_filtro: str, valores: list[Any]) -> FiltroAplicado:
+               tipo_filtro: str, valores: list[Any], conector: str = "AND") -> FiltroAplicado:
         
         filtro = FiltroAplicado(grafico_id=grafico_id, columna_id=columna_id,
-                                tipo_filtro=tipo_filtro, valores=valores)
+                                tipo_filtro=tipo_filtro, valores=valores, conector=conector)
         
         # sin flush ya que se pueden crear varios filtros seguidos los cuales
         # el commit final del router los guarda todos de golpe
