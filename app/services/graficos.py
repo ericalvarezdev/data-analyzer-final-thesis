@@ -11,13 +11,15 @@ TIPOS_FILTRO_VALIDOS = {"rango", "valor_exacto", "lista_valores", "diferente_de"
                          "contiene_texto", "mayor_que", "menor_que",
                          "fecha_antes_de", "fecha_despues_de", "fecha_entre"}
 
-# para combinar varios filtros entre si
+# para combinar varios filtros entre si. Por ahora sin NOT ni agrupaciones con
+# paréntesis, de momento solo se van encadenando uno detrás de otro en el orden
+# en el que llegan (de izquierda a derecha)
 CONECTORES_VALIDOS = {"AND", "OR"}
 
 # límite de categorías para que el gráfico no salga ilegible (categoria es un valor de una columna)
 MAX_CATEGORIAS = 20
 
-# operaciones que no tienen sentido como "parte de un total" (tarta) porque no se suman,
+# operaciones que no tienen sentido como "parte de un total" (tarta) porque no sé suman,
 # son más bien sobre cómo se reparten los valores de una columna (caja/histograma)
 OPERACIONES_ESTADISTICAS = {"media", "mediana", "minimo", "maximo", "desviacion_estandar", "varianza"}
 
@@ -90,7 +92,7 @@ def aplicar_filtros(df: pd.DataFrame, filtros: list[dict]) -> pd.DataFrame:
 
     # antes iba recortando el dataframe filtro a filtro, pero así solo podía
     # encadenar en Y (cada filtro recortaba sobre lo que dejaba el anterior).
-    # para poder hacer Or necesito la máscara de cada filtro calculada sobre la
+    # para poder hacer O necesito la máscara de cada filtro calculada sobre la
     # misma tabla y combinarlas luego, así que ahora guardo una máscara por
     # filtro y al final las uno con & (AND) o | (OR) según toque
     mascara_acumulada = None
@@ -149,6 +151,39 @@ def _agregar(df: pd.DataFrame, posicion_x: int, posicion_y: int | None,
     return agrupado.index.astype(str).tolist(), [float(v) for v in agrupado.values]
 
 
+# _agregar() deja las categorías ordenadas de mayor a menor valor, y eso tiene sentido para
+# barras/tarta (quiero ver primero la categoría más grande). Pero para una línea NO: ahí el
+# eje x tiene que seguir su propio orden (normalmente fechas) para que se vea una evolución
+# real y no un zigzag sin sentido. Por eso construir_especificacion llama a esto justo
+# después de _agregar(), solo para "lineas"
+#
+# primero pruebo si son números y no fecha: un número como "2026" se podría leer como las
+# dos cosas (es un año válido), pero probando primero como número me ahorro el caso raro de
+# que pandas interprete un número normal (p.ej. un Mes del 1 al 12) como si fuera una fecha.
+# una fecha de verdad (con guiones o barras) nunca se deja convertir a número, así que esto
+# no quita ningún caso real de fecha
+#
+# si no son números pruebo si son fecha (aunque lleguen como texto de un csv, igual que ya
+# hace inferir_tipo en procesamiento.py; dayfirst=True porque aquí las fechas son en formato
+# español DD/MM/YYYY, con fechas ISO esto no cambia nada). Si tampoco, se quedan como texto,
+# que para categorías sigue siendo mejor que el orden por valor
+def _ordenar_por_x(etiquetas: list[str], valores: list[float]) -> tuple[list[str], list[float]]:
+    serie_etiquetas = pd.Series(etiquetas)
+
+    como_numero = pd.to_numeric(serie_etiquetas, errors="coerce")
+    como_fecha = pd.to_datetime(serie_etiquetas, errors="coerce", dayfirst=True)
+
+    if como_numero.notna().sum() / len(etiquetas) >= 0.9:
+        clave_orden = como_numero
+    elif como_fecha.notna().sum() / len(etiquetas) >= 0.9:
+        clave_orden = como_fecha
+    else:
+        clave_orden = serie_etiquetas
+
+    orden = clave_orden.sort_values().index
+    return [etiquetas[i] for i in orden], [valores[i] for i in orden]
+
+
 # para caja/histograma no agrego nada: necesito los valores en bruto de cada categoría
 # para que sea Plotly quien calcule los cuartiles (caja) o reparta los valores en barras (histograma)
 def _valores_crudos_por_categoria(df: pd.DataFrame, posicion_x: int,
@@ -187,6 +222,7 @@ def construir_especificacion(df: pd.DataFrame, posicion_x: int, posicion_y: int 
 
     if tipo_grafico == "lineas":
         etiquetas, valores = _agregar(df, posicion_x, posicion_y, operacion)
+        etiquetas, valores = _ordenar_por_x(etiquetas, valores)
         return {
             "data": [{"type": "scatter", "mode": "lines+markers", "x": etiquetas, "y": valores}],
             "layout": {

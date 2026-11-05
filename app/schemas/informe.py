@@ -14,7 +14,8 @@ class InformeResponse(BaseModel):
     nombre: str | None
     fecha_creacion: datetime
     graficos: list[GraficoGeneradoResponse] = []
-    
+    resumen_ia: str | None = None # todavía no se habrá generado en los informes nuevos
+
     class Config:
         from_attributes = True
 

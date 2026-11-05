@@ -4,6 +4,8 @@ from sqlalchemy.orm import Session
 
 from app.auth_dependency import get_current_user
 from app.models.usuario import Usuario
+from app.models.informe_generado import InformeGenerado
+from app.models.grafico_generado import GraficoGenerado
 from app.database import get_db
 from app.repositories.informe_repository import InformeRepository
 from app.schemas.grafico import GraficoCreadoRequest, GraficoGeneradoResponse
@@ -26,11 +28,15 @@ TIPOS_DE_DISTRIBUCION = {"caja", "histograma"}
 
 router = APIRouter(prefix="/informes/{informe_id}/graficos", tags=["Graficos"])
 
-# endpoint que genera un grafico dentro de un informe
-@router.post("/", response_model=GraficoGeneradoResponse)
-def generar_grafico(informe_id: int, datos: GraficoCreadoRequest,
-                    db: Session = Depends(get_db),
-                    usuario_actual: Usuario = Depends(get_current_user)):
+
+# la separo del endpoint de abajo para reutilizarla desde el informe generado con IA, así
+# los gráficos de la IA pasan por las mismas validaciones que los manuales. Si la IA llamase
+# directamente al endpoint generar_grafico en vez de a esto habría dos problemas: 1) usuario_actual
+# viene de Depends(get_current_user), que solo lo resuelve FastAPI con una petición HTTP real,
+# no llamando a la función a pelo desde dentro de otro endpoint; 2) generar_grafico hace su
+# propio commit, así que si la IA lo llamase una vez por gráfico y fallase el cuarto de cinco,
+# los 3 anteriores ya se habrían guardado para siempre y el informe quedaría a medias
+def crear_grafico(informe: InformeGenerado, datos: GraficoCreadoRequest, db: Session) -> GraficoGenerado:
 
     # valido que el tipo de gráfico es soportado
     if datos.tipo_grafico not in TIPOS_VALIDOS:
@@ -49,13 +55,6 @@ def generar_grafico(informe_id: int, datos: GraficoCreadoRequest,
     if datos.tipo_grafico in TIPOS_DE_DISTRIBUCION and datos.operacion_agregacion not in OPERACIONES_PERMITEN_DISTRIBUCION:
         raise HTTPException(status_code=400,
                             detail="Ese tipo de gráfico necesita una operación de media, mediana, desviación estándar o varianza")
-
-
-    # valido que el informe existe y que es del usuario logeado
-    informe_repo = InformeRepository(db)
-    informe = informe_repo.get(informe_id)
-    if informe is None or informe.usuario_id != usuario_actual.id:
-        raise HTTPException(status_code=404, detail="Informe no encontrado")
 
 
     # el archivo lo saco del propio informe
@@ -142,7 +141,7 @@ def generar_grafico(informe_id: int, datos: GraficoCreadoRequest,
 
     # GUARDO EL GRÁFICO
     grafico_repo = GraficoRepository(db)
-    nuevo_grafico = grafico_repo.create(informe_id=informe_id,
+    nuevo_grafico = grafico_repo.create(informe_id=informe.id,
                                         columna_x_id=datos.columna_x_id,
                                         columna_y_id=datos.columna_y_id,
                                         operacion_agregacion=datos.operacion_agregacion,
@@ -160,6 +159,23 @@ def generar_grafico(informe_id: int, datos: GraficoCreadoRequest,
                            tipo_filtro=filtro.tipo_filtro,
                            valores=filtro.valores,
                            conector=filtro.conector)
+
+    return nuevo_grafico
+
+
+# endpoint que genera un grafico dentro de un informe
+@router.post("/", response_model=GraficoGeneradoResponse)
+def generar_grafico(informe_id: int, datos: GraficoCreadoRequest,
+                    db: Session = Depends(get_db),
+                    usuario_actual: Usuario = Depends(get_current_user)):
+
+    # valido que el informe existe y que es del usuario logeado
+    informe_repo = InformeRepository(db)
+    informe = informe_repo.get(informe_id)
+    if informe is None or informe.usuario_id != usuario_actual.id:
+        raise HTTPException(status_code=404, detail="Informe no encontrado")
+
+    nuevo_grafico = crear_grafico(informe, datos, db)
 
     db.commit()
     db.refresh(nuevo_grafico)

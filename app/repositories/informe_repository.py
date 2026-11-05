@@ -44,3 +44,8 @@ class InformeRepository:
     def actualizar_informe(self, informe: InformeGenerado, nuevo_nombre: str) -> InformeGenerado:
         informe.nombre = nuevo_nombre
         return informe
+    
+    # guarda el resumen que ha generado la IA, machacando el anterior si ya había uno
+    def guardar_resumen_ia(self, informe: InformeGenerado, resumen: str) -> InformeGenerado:
+        informe.resumen_ia = resumen
+        return informe

@@ -14,11 +14,11 @@ class Settings(BaseSettings):
     algorithm: str = "HS256" # utilizare el algoritmo HS256 para hashear
     token_expira_minutos: int = 60 * 24 # el token dura 24 horas antes de expirarse
 
+    # clave de la API de Gemini para las funciones de IA, se saca gratis en aistudio.google.com
+    gemini_api_key: str = ""
+
     class Config:
         env_file = ".env"  # si existe un archivo .env, lee los valores de ahí
-
-
-
 
 
 
