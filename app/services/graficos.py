@@ -164,14 +164,19 @@ def _agregar(df: pd.DataFrame, posicion_x: int, posicion_y: int | None,
 # no quita ningún caso real de fecha
 #
 # si no son números pruebo si son fecha (aunque lleguen como texto de un csv, igual que ya
-# hace inferir_tipo en procesamiento.py; dayfirst=True porque aquí las fechas son en formato
-# español DD/MM/YYYY, con fechas ISO esto no cambia nada). Si tampoco, se quedan como texto,
-# que para categorías sigue siendo mejor que el orden por valor
+# hace inferir_tipo en procesamiento.py). Si tampoco, se quedan como texto, que para
+# categorías sigue siendo mejor que el orden por valor
 def _ordenar_por_x(etiquetas: list[str], valores: list[float]) -> tuple[list[str], list[float]]:
     serie_etiquetas = pd.Series(etiquetas)
 
     como_numero = pd.to_numeric(serie_etiquetas, errors="coerce")
-    como_fecha = pd.to_datetime(serie_etiquetas, errors="coerce", dayfirst=True)
+
+    # primero pruebo el formato ISO (2025-09-01), que es como llegan las fechas del excel, y si
+    # no cuadra pruebo DD/MM/YYYY. Si lo hiciera directamente con dayfirst=True, pandas avisa
+    # con un warning cada vez que le llega una fecha ISO
+    como_fecha = pd.to_datetime(serie_etiquetas, errors="coerce", format="ISO8601")
+    if como_fecha.notna().sum() / len(etiquetas) < 0.9:
+        como_fecha = pd.to_datetime(serie_etiquetas, errors="coerce", dayfirst=True)
 
     if como_numero.notna().sum() / len(etiquetas) >= 0.9:
         clave_orden = como_numero

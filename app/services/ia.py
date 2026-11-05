@@ -3,6 +3,7 @@ import statistics
 import time
 
 from google import genai
+from google.genai import types
 
 from app.config import settings
 from app.models.archivo_subido import ArchivoSubido
@@ -28,41 +29,60 @@ MAX_GRAFICOS_PROPUESTOS = 6
 # Gemini a veces devuelve un 503 porque el modelo está saturado de peticiones (no es
 # culpa nuestra, es su servidor). Suele arreglarse solo al cabo de unos segundos, así
 # que antes de rendirme lo reintento unas pocas veces
-MAX_INTENTOS_IA = 3
+MAX_INTENTOS_IA = 2
 ESPERA_ENTRE_INTENTOS_SEGUNDOS = 5
 
-# "gemini-flash-latest" es un alias que siempre apunta al modelo Flash más nuevo, así
-# que es el que más tráfico recibe (todo el que usa el alias cae ahí) y el que más se
-# satura. Si se queda sin intentos, pruebo con la versión estable anterior, que al
-# usarse menos suele tener más hueco libre
-MODELO_PRINCIPAL = "gemini-flash-latest"
-MODELO_DE_RESERVA = "gemini-3.6-flash"
+
+
+# cuando va saturado, Google a veces no contesta el 503 al momento sino que deja la
+# petición esperando varios minutos (en una prueba tardó casi 5 minutos en dar el error),
+# así que le pongo un tiempo máximo: si en 30 segundos no ha respondido, lo trato como
+# saturado y paso al siguiente intento. Va en milisegundos porque así lo pide google-genai
+TIEMPO_MAXIMO_RESPUESTA_MS = 30_000
+
+
+
+
+# modelos que voy probando en orden. Primero un Flash-Lite, que piensa menos antes de
+# responder (para devolver un JSON con unos gráficos no hace falta más) y suele estar
+# menos saturado que el Flash más nuevo. Uso versiones fijas y no los alias "-latest"
+# porque el alias es el que usa todo el mundo y el que más se satura. Si el Lite falla
+# pruebo con un Flash normal, y al final con un Lite más antiguo que casi nadie usa
+MODELOS_IA = ("gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-2.5-flash-lite")
+
+
 
 
 # llama a Gemini con el prompt indicado y devuelve el texto de la respuesta.
-# si la IA está saturada (error 503/UNAVAILABLE) espera un poco y lo vuelve a intentar
-# con el mismo modelo, porque normalmente se soluciona solo; si se queda sin intentos,
-# prueba con MODELO_DE_RESERVA antes de rendirse del todo. Si el fallo es de otro tipo
-# (clave mal puesta, sin conexión...) no tiene sentido reintentar ni cambiar de modelo,
-# así que corta a la primera
+# si la IA está saturada (503) o tarda más de TIEMPO_MAXIMO_RESPUESTA_MS (504 o timeout)
+# espera un poco y lo vuelve a intentar con el mismo modelo; si se queda sin intentos,
+# pasa al siguiente modelo de MODELOS_IA antes de rendirse del todo. Si el fallo es de
+# otro tipo (clave mal puesta, sin conexión...) no tiene sentido reintentar ni cambiar
+# de modelo, así que corta a la primera
 def _generar_contenido(prompt: str) -> str:
-    cliente = genai.Client(api_key=settings.gemini_api_key)
+    cliente = genai.Client(api_key=settings.gemini_api_key,
+                           http_options=types.HttpOptions(timeout=TIEMPO_MAXIMO_RESPUESTA_MS))
     ultimo_error = None
 
-    for modelo in (MODELO_PRINCIPAL, MODELO_DE_RESERVA):
+    for modelo in MODELOS_IA:
         for intento in range(1, MAX_INTENTOS_IA + 1):
             try:
                 respuesta = cliente.models.generate_content(model=modelo, contents=prompt)
                 return respuesta.text
             except Exception as e:
                 ultimo_error = e
-                saturada = "503" in str(e) or "UNAVAILABLE" in str(e)
+                # si se ha pasado del tiempo máximo (lo corte nuestro cliente o Google con un 504)
+                # cuenta igual que un 503
+                tiempo_agotado = "timeout" in type(e).__name__.lower() or "timed out" in str(e).lower()
+                saturada = ("503" in str(e) or "UNAVAILABLE" in str(e)
+                            or "504" in str(e) or "DEADLINE_EXCEEDED" in str(e)
+                            or tiempo_agotado)
                 if not saturada:
                     raise ValueError(f"No se ha podido contactar con la IA: {e}")
                 if intento < MAX_INTENTOS_IA:
                     time.sleep(ESPERA_ENTRE_INTENTOS_SEGUNDOS)
         # aquí el modelo se ha quedado sin intentos por saturación, así que el bucle
-        # de fuera pasa a MODELO_DE_RESERVA (o, si ya era el de reserva, se acaba)
+        # de fuera pasa al siguiente modelo de MODELOS_IA (o, si era el último, se acaba)
 
     raise ValueError(f"No se ha podido contactar con la IA: {ultimo_error}")
 
