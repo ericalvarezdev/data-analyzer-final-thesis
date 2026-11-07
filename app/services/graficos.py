@@ -2,14 +2,17 @@
 from typing import Any
 import numpy as np
 import pandas as pd
-from app.services.procesamiento import leer_archivo
+from app.services.procesamiento import leer_archivo, convertir_a_fecha, es_columna_fecha
 
 TIPOS_VALIDOS = {"barras", "lineas", "tarta", "caja", "histograma"}
 OPERACIONES_VALIDAS = {"recuento", "suma", "media", "mediana", "minimo", "maximo",
                         "desviacion_estandar", "varianza", "recuento_distintos"}
+
+# filtros que trabajan con fechas, solo se pueden usar en columnas de tipo fecha
+TIPOS_FILTRO_FECHA = {"fecha_antes_de", "fecha_despues_de", "fecha_entre"}
+
 TIPOS_FILTRO_VALIDOS = {"rango", "valor_exacto", "lista_valores", "diferente_de",
-                         "contiene_texto", "mayor_que", "menor_que",
-                         "fecha_antes_de", "fecha_despues_de", "fecha_entre"}
+                         "contiene_texto", "mayor_que", "menor_que"} | TIPOS_FILTRO_FECHA
 
 # para combinar varios filtros entre si. Por ahora sin NOT ni agrupaciones con
 # paréntesis, de momento solo se van encadenando uno detrás de otro en el orden
@@ -37,10 +40,37 @@ OPERACIONES_PERMITEN_DISTRIBUCION = {"media", "mediana", "desviacion_estandar", 
 # lee el excel y coordina todo
 
 
+# calcula la máscara de los filtros de fecha. Comparo por días (sin la hora), así "antes
+# del 1 de marzo" o "entre el 1 y el 31 de marzo" no dependen de a qué hora fue cada venta.
+# Antes con horas fallaba: "entre el 1 y el 31 de marzo" se dejaba fuera el día 31 a partir
+# de las 00:00. Las fechas de los filtros llegan del frontend en formato aaaa-mm-dd
+def _mascara_fecha(serie: pd.Series, tipo: str, valores: list) -> pd.Series:
+    # la columna puede venir como texto (csv) o ya como fecha (excel), convertir_a_fecha
+    # sirve para los dos casos. Lo que no se puede leer como fecha queda vacío y no cumple
+    # ningún filtro
+    fechas = convertir_a_fecha(serie)
+    dias = fechas.dt.normalize() # normalize() deja la fecha a las 00:00, es decir, quita la hora
+
+    if tipo == "fecha_antes_de":
+        return dias < pd.Timestamp(valores[0])
+
+    elif tipo == "fecha_despues_de":
+        return dias > pd.Timestamp(valores[0])
+
+    elif tipo == "fecha_entre":
+        # las dos fechas incluidas
+        return (dias >= pd.Timestamp(valores[0])) & (dias <= pd.Timestamp(valores[1]))
+
+    raise ValueError(f"Tipo de filtro de fecha no soportado: {tipo}")
+
+
 # calcula la máscara (True/False por fila) de un solo filtro, sin tocar el dataframe
 # la separo de aplicar_filtros para poder combinar varias máscaras con AND/OR antes
 # de recortar el dataframe de una vez
 def _calcular_mascara(serie: pd.Series, tipo: str, valores: list) -> pd.Series:
+
+    if tipo in TIPOS_FILTRO_FECHA:
+        return _mascara_fecha(serie, tipo, valores)
 
     if tipo == "valor_exacto":
         return serie == valores[0]  # si es un valor exacto valores solo tendrá una posición 0
@@ -66,19 +96,7 @@ def _calcular_mascara(serie: pd.Series, tipo: str, valores: list) -> pd.Series:
         # na=False para que las filas vacías no cuenten como que "contienen" el texto
         return serie.astype(str).str.contains(str(valores[0]), na=False)
 
-    elif tipo == "fecha_antes_de":
-        # la columna puede venir como texto (csv) o ya como fecha (excel), por eso
-        # la paso siempre por to_datetime, si ya es fecha no pasa nada raro
-        serie_fecha = pd.to_datetime(serie, errors="coerce")
-        return serie_fecha < pd.to_datetime(valores[0])
-
-    elif tipo == "fecha_despues_de":
-        serie_fecha = pd.to_datetime(serie, errors="coerce")
-        return serie_fecha > pd.to_datetime(valores[0])
-
-    elif tipo == "fecha_entre":
-        serie_fecha = pd.to_datetime(serie, errors="coerce")
-        return (serie_fecha >= pd.to_datetime(valores[0])) & (serie_fecha <= pd.to_datetime(valores[1]))
+    raise ValueError(f"Tipo de filtro no soportado: {tipo}")
 
 
 # recibe la tabla completa y la va filtrando
@@ -119,15 +137,22 @@ def aplicar_filtros(df: pd.DataFrame, filtros: list[dict]) -> pd.DataFrame:
 
 
 # calcula el valor agregado (suma, media, etc.) de cada categoría de la columna x.
-# lo usan barras y líneas, que necesitan un número por categoría, no los valores en bruto
+# lo usan barras y líneas, que necesitan un número por categoría, no los valores en bruto.
+# todas_las_categorias=True no se queda solo con las MAX_CATEGORIAS más grandes, lo uso
+# cuando el eje x son fechas
 def _agregar(df: pd.DataFrame, posicion_x: int, posicion_y: int | None,
-             operacion: str) -> tuple[list[str], list[float]]:
+             operacion: str, todas_las_categorias: bool = False) -> tuple[list[str], list[float]]:
 
     serie_x = df.iloc[:, posicion_x]
 
+    # si el eje x son fechas agrupo por día (quitando la hora). Si no, en un archivo de
+    # ventas donde cada venta tiene su hora, cada venta salía como un punto distinto
+    if es_columna_fecha(serie_x):
+        serie_x = convertir_a_fecha(serie_x).dt.normalize()
+
     # contar no necesita eje y, solo cuantas veces aparece cada valor de la columna x
     if operacion == "recuento":
-        agrupado = serie_x.value_counts().head(MAX_CATEGORIAS)
+        agrupado = serie_x.value_counts()
 
     else:
         serie_y = df.iloc[:, posicion_y]
@@ -146,7 +171,13 @@ def _agregar(df: pd.DataFrame, posicion_x: int, posicion_y: int | None,
 
         # fillna(0) porque con poca cantidad de datos por categoría la desviación
         # estándar/varianza puede salir vacía (NaN) en vez de 0
-        agrupado = metodo().fillna(0).sort_values(ascending=False).head(MAX_CATEGORIAS)
+        agrupado = metodo().fillna(0)
+
+    # en barras y tarta me quedo con las categorías más grandes para que se pueda leer.
+    # Con fechas en el eje x no: ahí lo que importa es ver la evolución entera, y quedarme
+    # con los 20 días más altos dejaba un gráfico con huecos que parecía otra cosa
+    if not todas_las_categorias:
+        agrupado = agrupado.sort_values(ascending=False).head(MAX_CATEGORIAS)
 
     return agrupado.index.astype(str).tolist(), [float(v) for v in agrupado.values]
 
@@ -155,7 +186,7 @@ def _agregar(df: pd.DataFrame, posicion_x: int, posicion_y: int | None,
 # barras/tarta (quiero ver primero la categoría más grande). Pero para una línea NO: ahí el
 # eje x tiene que seguir su propio orden (normalmente fechas) para que se vea una evolución
 # real y no un zigzag sin sentido. Por eso construir_especificacion llama a esto justo
-# después de _agregar(), solo para "lineas"
+# después de _agregar() para "lineas", y también para "barras" cuando el eje x son fechas
 #
 # primero pruebo si son números y no fecha: un número como "2026" se podría leer como las
 # dos cosas (es un año válido), pero probando primero como número me ahorro el caso raro de
@@ -163,20 +194,18 @@ def _agregar(df: pd.DataFrame, posicion_x: int, posicion_y: int | None,
 # una fecha de verdad (con guiones o barras) nunca se deja convertir a número, así que esto
 # no quita ningún caso real de fecha
 #
-# si no son números pruebo si son fecha (aunque lleguen como texto de un csv, igual que ya
-# hace inferir_tipo en procesamiento.py). Si tampoco, se quedan como texto, que para
-# categorías sigue siendo mejor que el orden por valor
+# si no son números pruebo si son fecha con convertir_a_fecha (la misma que usa inferir_tipo
+# en procesamiento.py, así las fechas se leen igual en todas partes). Si tampoco, se quedan
+# como texto, que para categorías sigue siendo mejor que el orden por valor
 def _ordenar_por_x(etiquetas: list[str], valores: list[float]) -> tuple[list[str], list[float]]:
+    # sin categorías no hay nada que ordenar (y abajo dividiría entre 0)
+    if not etiquetas:
+        return etiquetas, valores
+
     serie_etiquetas = pd.Series(etiquetas)
 
     como_numero = pd.to_numeric(serie_etiquetas, errors="coerce")
-
-    # primero pruebo el formato ISO (2025-09-01), que es como llegan las fechas del excel, y si
-    # no cuadra pruebo DD/MM/YYYY. Si lo hiciera directamente con dayfirst=True, pandas avisa
-    # con un warning cada vez que le llega una fecha ISO
-    como_fecha = pd.to_datetime(serie_etiquetas, errors="coerce", format="ISO8601")
-    if como_fecha.notna().sum() / len(etiquetas) < 0.9:
-        como_fecha = pd.to_datetime(serie_etiquetas, errors="coerce", dayfirst=True)
+    como_fecha = convertir_a_fecha(serie_etiquetas)
 
     if como_numero.notna().sum() / len(etiquetas) >= 0.9:
         clave_orden = como_numero
@@ -225,8 +254,12 @@ def construir_especificacion(df: pd.DataFrame, posicion_x: int, posicion_y: int 
             "layout": {},
         }
 
+    # si el eje x son fechas, en líneas y barras enseño todos los días y en orden de fecha
+    eje_x_es_fecha = es_columna_fecha(df.iloc[:, posicion_x])
+
     if tipo_grafico == "lineas":
-        etiquetas, valores = _agregar(df, posicion_x, posicion_y, operacion)
+        etiquetas, valores = _agregar(df, posicion_x, posicion_y, operacion,
+                                      todas_las_categorias=eje_x_es_fecha)
         etiquetas, valores = _ordenar_por_x(etiquetas, valores)
         return {
             "data": [{"type": "scatter", "mode": "lines+markers", "x": etiquetas, "y": valores}],
@@ -280,7 +313,10 @@ def construir_especificacion(df: pd.DataFrame, posicion_x: int, posicion_y: int 
         }
 
     # barras (por defecto)
-    etiquetas, valores = _agregar(df, posicion_x, posicion_y, operacion)
+    etiquetas, valores = _agregar(df, posicion_x, posicion_y, operacion,
+                                  todas_las_categorias=eje_x_es_fecha)
+    if eje_x_es_fecha:
+        etiquetas, valores = _ordenar_por_x(etiquetas, valores)
     return {
         "data": [{"type": "bar", "x": etiquetas, "y": valores}],
         "layout": {

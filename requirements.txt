@@ -29,6 +29,7 @@ httpcore==1.0.9
 httptools==0.8.0
 httpx==0.28.1
 idna==3.19
+iniconfig==2.3.1
 Jinja2==3.1.6
 kaleido==1.5.0
 logistro==2.0.1
@@ -44,6 +45,7 @@ pandas==3.0.5
 passlib==1.7.4
 platformdirs==4.13.5
 plotly==7.1.0
+pluggy==1.7.0
 pyasn1==0.6.4
 pyasn1_modules==0.4.2
 pycparser==3.0
@@ -53,6 +55,7 @@ pydantic-settings==2.15.0
 pydantic_core==2.46.5
 Pygments==2.21.0
 pypdf==5.9.0
+pytest==9.2.0
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.3
 python-jose==3.5.0

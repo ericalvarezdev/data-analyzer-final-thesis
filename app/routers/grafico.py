@@ -1,8 +1,12 @@
 
+import re
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.auth_dependency import get_current_user
+from app.models.columna import Columna
 from app.models.usuario import Usuario
 from app.models.informe_generado import InformeGenerado
 from app.models.grafico_generado import GraficoGenerado
@@ -14,8 +18,9 @@ from app.repositories.columna_repository import ColumnaRepository
 from app.repositories.grafico_repository import GraficoRepository
 from app.repositories.filtro_repository import FiltroRepository
 from app.services.graficos import (OPERACIONES_VALIDAS, TIPOS_FILTRO_VALIDOS, TIPOS_VALIDOS,
-                                   OPERACIONES_PERMITEN_TARTA, OPERACIONES_PERMITEN_DISTRIBUCION,
-                                   CONECTORES_VALIDOS, generar_especificacion_grafico)
+                                   TIPOS_FILTRO_FECHA, OPERACIONES_PERMITEN_TARTA,
+                                   OPERACIONES_PERMITEN_DISTRIBUCION, CONECTORES_VALIDOS,
+                                   generar_especificacion_grafico)
 
 # estos dos tipos de filtro necesitan dos valores (un mínimo y un máximo),
 # el resto de tipos de filtro necesitan solo uno
@@ -27,6 +32,40 @@ TIPOS_DE_DISTRIBUCION = {"caja", "histograma"}
 
 
 router = APIRouter(prefix="/informes/{informe_id}/graficos", tags=["Graficos"])
+
+
+# True si el valor es una fecha en formato aaaa-mm-dd, que es lo que manda el input de
+# fecha del frontend
+def _es_fecha_aaaa_mm_dd(valor) -> bool:
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(valor)):
+        return False
+    try:
+        date.fromisoformat(str(valor)) # para que no cuele un 2025-02-31
+        return True
+    except ValueError:
+        return False
+
+
+# compruebo los filtros de fecha antes de calcular nada, así si algo está mal el usuario
+# recibe un error que se entiende en vez de un gráfico vacío o un error interno
+def _validar_filtro_de_fecha(tipo: str, valores: list, columna: Columna) -> None:
+
+    if tipo not in TIPOS_FILTRO_FECHA:
+        return
+
+    # un filtro de fecha sobre una columna de texto no dejaría ninguna fila
+    if columna.tipo_dato != "fecha":
+        raise HTTPException(status_code=400,
+                            detail=f"Los filtros de fecha solo se pueden usar en columnas de fechas, y '{columna.nombre_columna}' no lo es")
+
+    if not all(_es_fecha_aaaa_mm_dd(valor) for valor in valores):
+        raise HTTPException(status_code=400,
+                            detail="Las fechas de los filtros tienen que estar en formato aaaa-mm-dd")
+
+    # en formato aaaa-mm-dd comparar como texto ya ordena bien las fechas
+    if tipo == "fecha_entre" and str(valores[0]) > str(valores[1]):
+        raise HTTPException(status_code=400,
+                            detail="En 'fecha entre' la primera fecha no puede ser posterior a la segunda")
 
 
 # la separo del endpoint de abajo para reutilizarla desde el informe generado con IA, así
@@ -114,6 +153,8 @@ def crear_grafico(informe: InformeGenerado, datos: GraficoCreadoRequest, db: Ses
 
         if columna_filtro is None or columna_filtro.archivo_id != archivo.id:
             raise HTTPException(status_code=404, detail="Una de las columnas de los filtros no es de este archivo")
+
+        _validar_filtro_de_fecha(filtro.tipo_filtro, filtro.valores, columna_filtro)
 
         filtros_para_calculo.append({
             "posicion": columna_filtro.posicion,
