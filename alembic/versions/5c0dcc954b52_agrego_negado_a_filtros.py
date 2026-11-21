@@ -20,9 +20,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    pass
+    # server_default="0" para que los filtros que ya había queden como no negados
+    op.add_column('filtros_aplicados', sa.Column('negado', sa.Boolean(), nullable=False, server_default='0'))
 
 
 def downgrade() -> None:
     """Downgrade schema."""
-    pass
+    op.drop_column('filtros_aplicados', 'negado')
