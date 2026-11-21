@@ -1,4 +1,3 @@
-
 from datetime import datetime
 from typing import Any
 
@@ -31,6 +30,11 @@ class GraficoGeneradoResponse(BaseModel):
     columna_x: ColumnaResponse
     columna_y: ColumnaResponse | None
     filtros: list[FiltroResponse] = []
+
+    # los filtros en texto, para enseñarlos en la web debajo del gráfico (sale de la
+    # propiedad filtros_texto del modelo, es el mismo texto que el del PDF)
+    filtros_texto: str = ""
+
     operacion_agregacion: str
 
     # ya no mando etiquetas y valores sueltos, mando directamente la especificación

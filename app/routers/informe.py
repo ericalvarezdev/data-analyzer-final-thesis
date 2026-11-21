@@ -1,4 +1,3 @@
-
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
@@ -6,16 +5,35 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.auth_dependency import get_current_user
 from app.models.usuario import Usuario
+from app.models.archivo_subido import ArchivoSubido
 from app.schemas.informe import InformeCreateRequest, InformeResponse, InformeUpdateRequest
 from app.schemas.grafico import GraficoCreadoRequest
 from app.repositories.archivo_repository import ArchivoRepository
 from app.repositories.informe_repository import InformeRepository
 from app.services.pdf import generar_pdf_informe
-from app.services.ia import generar_resumen_informe, proponer_graficos
+from app.services.ia import generar_resumen_informe, proponer_graficos, detectar_idioma, IDIOMA_POR_DEFECTO
 from app.routers.grafico import crear_grafico
 
 
 router = APIRouter(prefix="/archivos/{archivo_id}/informes", tags=["Informes"])
+
+
+# idioma en el que tienen que salir los títulos de los gráficos y el resumen de la IA: el del
+# archivo. La primera vez se lo pregunto a la IA y lo guardo en el archivo, así en los
+# siguientes informes (o al regenerar el resumen) ya no hace falta volver a preguntar.
+# Si la IA falla uso el idioma por defecto (español) pero no lo guardo, para que la próxima
+# vez lo vuelva a intentar. Se guarda de verdad con el commit del endpoint que llama a esto
+def _obtener_idioma(archivo: ArchivoSubido, archivo_repo: ArchivoRepository) -> str:
+    if archivo.idioma:
+        return archivo.idioma
+
+    try:
+        idioma = detectar_idioma(archivo)
+    except ValueError:
+        return IDIOMA_POR_DEFECTO
+
+    archivo_repo.guardar_idioma(archivo, idioma)
+    return idioma
 
 
 # endpoint para crear un informe 
@@ -59,8 +77,10 @@ def crear_informe_con_ia(archivo_id: int, datos: InformeCreateRequest,
     if archivo is None or archivo.usuario_id != usuario_actual.id:
         raise HTTPException(status_code=404, detail="Archivo no encontrado")
 
+    idioma = _obtener_idioma(archivo, archivo_repo)
+
     try:
-        propuestas = proponer_graficos(archivo)
+        propuestas = proponer_graficos(archivo, idioma)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -211,8 +231,11 @@ def generar_resumen(informe_id: int,
     if informe is None or informe.usuario_id != usuario_actual.id:
         raise HTTPException(status_code=404, detail="Informe no encontrado")
 
+    # el resumen sale en el idioma del archivo del que viene el informe
+    idioma = _obtener_idioma(informe.archivo, ArchivoRepository(db))
+
     try:
-        resumen = generar_resumen_informe(informe)
+        resumen = generar_resumen_informe(informe, idioma)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

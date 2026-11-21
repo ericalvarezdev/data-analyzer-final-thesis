@@ -7,6 +7,7 @@ class FiltroRequest(BaseModel):
     tipo_filtro: str
     valores: list[Any] # Any puede ser texto, número o fecha
     conector: str = "AND" # AND u OR, con el primer filtro de la lista no se usa
+    negado: bool = False # NOT, si es True me quedo con las filas que NO cumplen el filtro
 
 # información que la api devuelve de un filtro
 class FiltroResponse(BaseModel):
@@ -16,7 +17,7 @@ class FiltroResponse(BaseModel):
     tipo_filtro: str
     valores: list[Any]
     conector: str
-    
+    negado: bool
+
     class Config:
         from_attributes=True
-

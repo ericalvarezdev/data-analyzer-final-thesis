@@ -1,4 +1,3 @@
-
 from typing import Any
 import numpy as np
 import pandas as pd
@@ -9,14 +8,16 @@ OPERACIONES_VALIDAS = {"recuento", "suma", "media", "mediana", "minimo", "maximo
                         "desviacion_estandar", "varianza", "recuento_distintos"}
 
 # filtros que trabajan con fechas, solo se pueden usar en columnas de tipo fecha
-TIPOS_FILTRO_FECHA = {"fecha_antes_de", "fecha_despues_de", "fecha_entre"}
+TIPOS_FILTRO_FECHA = {"fecha_antes_de", "fecha_despues_de", "fecha_entre", "fecha_dia",
+                      "fecha_mes", "fecha_trimestre", "fecha_ultimos_dias"}
 
 TIPOS_FILTRO_VALIDOS = {"rango", "valor_exacto", "lista_valores", "diferente_de",
                          "contiene_texto", "mayor_que", "menor_que"} | TIPOS_FILTRO_FECHA
 
-# para combinar varios filtros entre si. Por ahora sin NOT ni agrupaciones con
-# paréntesis, de momento solo se van encadenando uno detrás de otro en el orden
-# en el que llegan (de izquierda a derecha)
+# para combinar varios filtros entre si. El NOT no es un conector, va dentro de cada
+# filtro (negado=True) y le da la vuelta solo a ese filtro. Sin agrupaciones con
+# paréntesis: los filtros se van encadenando uno detrás de otro en el orden en el que
+# llegan (de izquierda a derecha)
 CONECTORES_VALIDOS = {"AND", "OR"}
 
 # límite de categorías para que el gráfico no salga ilegible (categoria es un valor de una columna)
@@ -43,7 +44,9 @@ OPERACIONES_PERMITEN_DISTRIBUCION = {"media", "mediana", "desviacion_estandar", 
 # calcula la máscara de los filtros de fecha. Comparo por días (sin la hora), así "antes
 # del 1 de marzo" o "entre el 1 y el 31 de marzo" no dependen de a qué hora fue cada venta.
 # Antes con horas fallaba: "entre el 1 y el 31 de marzo" se dejaba fuera el día 31 a partir
-# de las 00:00. Las fechas de los filtros llegan del frontend en formato aaaa-mm-dd
+# de las 00:00. Los valores llegan del frontend ya comprobados en el router: las fechas en
+# formato aaaa-mm-dd, el mes como aaaa-mm, el trimestre como [año, trimestre] y los
+# últimos días como un número
 def _mascara_fecha(serie: pd.Series, tipo: str, valores: list) -> pd.Series:
     # la columna puede venir como texto (csv) o ya como fecha (excel), convertir_a_fecha
     # sirve para los dos casos. Lo que no se puede leer como fecha queda vacío y no cumple
@@ -61,7 +64,37 @@ def _mascara_fecha(serie: pd.Series, tipo: str, valores: list) -> pd.Series:
         # las dos fechas incluidas
         return (dias >= pd.Timestamp(valores[0])) & (dias <= pd.Timestamp(valores[1]))
 
+    elif tipo == "fecha_dia":
+        # un día concreto, con todas sus horas
+        return dias == pd.Timestamp(valores[0])
+
+    elif tipo == "fecha_mes":
+        # "2025-03" lo separo en el año (2025) y el mes (03)
+        año, mes = str(valores[0]).split("-")
+        return (fechas.dt.year == int(año)) & (fechas.dt.month == int(mes))
+
+    elif tipo == "fecha_trimestre":
+        # [2025, 1] es el primer trimestre de 2025 (de enero a marzo). dt.quarter me da
+        # el trimestre de cada fecha (1, 2, 3 o 4)
+        return (fechas.dt.year == int(valores[0])) & (fechas.dt.quarter == int(valores[1]))
+
+    elif tipo == "fecha_ultimos_dias":
+        # cuento desde la última fecha que hay en el archivo y no desde hoy, porque si el
+        # archivo es de las ventas de 2025, "los últimos 30 días" contando desde hoy no
+        # dejarían ninguna fila. Con 30 días cojo el último día del archivo y los 29 anteriores
+        ultimo_dia = dias.max()
+        return dias >= ultimo_dia - pd.Timedelta(days=int(valores[0]) - 1)
+
     raise ValueError(f"Tipo de filtro de fecha no soportado: {tipo}")
+
+
+# el frontend manda los valores de "valor exacto", "diferente de" y "lista de valores" como
+# texto, y en una columna numérica 5 == "5" da False, así que el filtro no encontraba nunca
+# nada. Si la columna es numérica paso los valores a número antes de comparar
+def _valores_como_la_columna(serie: pd.Series, valores: list) -> list:
+    if pd.api.types.is_numeric_dtype(serie):
+        return pd.to_numeric(pd.Series(valores), errors="coerce").tolist()
+    return valores
 
 
 # calcula la máscara (True/False por fila) de un solo filtro, sin tocar el dataframe
@@ -73,13 +106,17 @@ def _calcular_mascara(serie: pd.Series, tipo: str, valores: list) -> pd.Series:
         return _mascara_fecha(serie, tipo, valores)
 
     if tipo == "valor_exacto":
+        valores = _valores_como_la_columna(serie, valores)
         return serie == valores[0]  # si es un valor exacto valores solo tendrá una posición 0
 
     elif tipo == "diferente_de":
-        return serie != valores[0]
+        # & serie.notna() para que una celda vacía no cuente como "diferente de Barcelona":
+        # no tiene ningún valor, así que no es ni igual ni diferente
+        valores = _valores_como_la_columna(serie, valores)
+        return (serie != valores[0]) & serie.notna()
 
     elif tipo == "lista_valores":
-        return serie.isin(valores)
+        return serie.isin(_valores_como_la_columna(serie, valores))
 
     elif tipo == "rango":
         # el rango són dos valores (mínimo y máximo), por lo tanto tiene que ser
@@ -99,9 +136,17 @@ def _calcular_mascara(serie: pd.Series, tipo: str, valores: list) -> pd.Series:
     raise ValueError(f"Tipo de filtro no soportado: {tipo}")
 
 
+# filas que tienen un valor útil para un filtro: en los de fecha, que la fecha se haya
+# podido leer; en el resto, que la celda no esté vacía. Lo uso para el NOT
+def _filas_con_valor(serie: pd.Series, tipo: str) -> pd.Series:
+    if tipo in TIPOS_FILTRO_FECHA:
+        return convertir_a_fecha(serie).notna()
+    return serie.notna()
+
+
 # recibe la tabla completa y la va filtrando
-# cada filtro trae la posición de la columna, tipo de filtro, valores y el
-# conector (AND/OR) con el que se une al resultado de los filtros anteriores
+# cada filtro trae la posición de la columna, tipo de filtro, valores, si está negado
+# (NOT) y el conector (AND/OR) con el que se une al resultado de los filtros anteriores
 # el filtro puede ser por muchas columnas por ejemplo, solo quiero que se vean el numero las ventas del producto A en todas las ciudades
 def aplicar_filtros(df: pd.DataFrame, filtros: list[dict]) -> pd.DataFrame:
 
@@ -123,6 +168,12 @@ def aplicar_filtros(df: pd.DataFrame, filtros: list[dict]) -> pd.DataFrame:
         conector = filtro.get("conector", "AND")
 
         mascara = _calcular_mascara(serie, tipo, valores)
+
+        # NOT: me quedo con las filas que NO cumplen el filtro, pero solo entre las que
+        # tienen valor en esa columna. Una celda vacía (o una fecha que no se ha podido
+        # leer) no cumple ni deja de cumplir el filtro, así que no la cuento
+        if filtro.get("negado", False):
+            mascara = ~mascara & _filas_con_valor(serie, tipo)
 
         if mascara_acumulada is None:
             # el primer filtro no tiene nada con lo que combinarse, así que su

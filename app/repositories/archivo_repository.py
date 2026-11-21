@@ -94,3 +94,8 @@ class ArchivoRepository:
         archivos = self.db.query(ArchivoSubido).filter(ArchivoSubido.usuario_id == usuario_id).order_by(ArchivoSubido.fecha_subida.desc()).all()
         return archivos
     
+    
+    # Guarda el idioma del archivo que ha detectado la IA. Sin commit, lo hace el router
+    def guardar_idioma(self, archivo: ArchivoSubido, idioma: str) -> ArchivoSubido:
+        archivo.idioma = idioma
+        return archivo

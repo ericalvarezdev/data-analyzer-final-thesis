@@ -18,7 +18,11 @@ class ArchivoSubido(Base):
     numero_filas = Column(Integer, nullable=True)
     numero_columnas = Column(Integer, nullable=True)
     fecha_subida = Column(DateTime, default=datetime.utcnow)
+    
     hoja_seleccionada = Column(String, nullable=True) # lo usaré en el futuro cuando de la opción de seleccionar hoja
+    # idioma del archivo (por ejemplo "catalán"), lo detecta la IA la primera vez que hace falta
+    # y lo guardo para no tener que volver a preguntarlo. Vacío hasta entonces
+    idioma = Column(String, nullable=True)
     
     # cascade="all, delete-orphan" si se borra un archivo se borrarán todos sus gráficos y columnas
     usuario = relationship("Usuario", back_populates="archivos") # el delete cascade va solo en usuario porque sino al borrar un archivo tambien se borraria el usuario

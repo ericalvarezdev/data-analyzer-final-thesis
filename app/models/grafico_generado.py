@@ -2,6 +2,7 @@ from sqlalchemy import JSON, Column, Integer, String, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.database import Base
+from app.services.texto_filtros import describir_filtros
 
 
 class GraficoGenerado(Base):
@@ -33,3 +34,10 @@ class GraficoGenerado(Base):
 
     informe = relationship("InformeGenerado", back_populates="graficos")
     filtros = relationship("FiltroAplicado", back_populates="grafico", cascade="all, delete-orphan")
+
+    # texto de los filtros, el mismo que sale en el PDF debajo del título. Es una propiedad y
+    # no una columna de la tabla: no se guarda en la base de datos, se calcula cada vez a
+    # partir de los filtros, así que no hace falta migración. El schema lo lee como un campo más
+    @property
+    def filtros_texto(self) -> str:
+        return describir_filtros(self.filtros)

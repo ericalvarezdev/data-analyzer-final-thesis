@@ -105,7 +105,13 @@ def leer_archivo(ruta: str, formato:str) -> pd.DataFrame:
     # Compruebo que el formato sea excel o csv
     # y devuelvo el archivo en forma de un dataframe
     if formato == "csv":
-        return pd.read_csv(ruta)
+        try:
+            return pd.read_csv(ruta)
+        except UnicodeDecodeError:
+            # algunos CSV (por ejemplo los que se guardan con Excel en Windows) no vienen en
+            # UTF-8, y en cuanto hay una tilde o un símbolo raro pandas no los puede leer.
+            # latin-1 sabe leer cualquier byte, así que lo uso como segunda opción
+            return pd.read_csv(ruta, encoding="latin-1")
     if formato == "xlsx":
         return pd.read_excel(ruta)
     

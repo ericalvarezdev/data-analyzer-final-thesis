@@ -33,4 +33,10 @@ class GraficoRepository:
     def list_by_informe(self, informe_id:int) -> list[GraficoGenerado]:
         graficos = self.db.query(GraficoGenerado).filter(GraficoGenerado.informe_id == informe_id).all()
         return graficos
+    
+    
+    # borra un gráfico. Sus filtros se borran solos por el cascade="all, delete-orphan"
+    # de la relación filtros en el modelo GraficoGenerado. Sin commit, lo hace el router
+    def delete(self, grafico: GraficoGenerado) -> None:
+        self.db.delete(grafico)
 

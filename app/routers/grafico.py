@@ -1,4 +1,3 @@
-
 import re
 from datetime import date
 
@@ -22,9 +21,14 @@ from app.services.graficos import (OPERACIONES_VALIDAS, TIPOS_FILTRO_VALIDOS, TI
                                    OPERACIONES_PERMITEN_DISTRIBUCION, CONECTORES_VALIDOS,
                                    generar_especificacion_grafico)
 
-# estos dos tipos de filtro necesitan dos valores (un mínimo y un máximo),
-# el resto de tipos de filtro necesitan solo uno
+# estos dos tipos de filtro necesitan dos valores (un mínimo y un máximo). El de trimestre
+# también lleva dos (el año y el trimestre), pero ese lo compruebo en _validar_filtro_de_fecha
+# junto con el resto de filtros de fecha. Los demás tipos de filtro necesitan solo uno
 TIPOS_FILTRO_DE_RANGO = {"rango", "fecha_entre"}
+
+# filtros de fecha que llevan fechas completas (aaaa-mm-dd), las del input de fecha del
+# frontend. Los de mes, trimestre y últimos días llevan otra cosa y los compruebo aparte
+TIPOS_FILTRO_CON_FECHA_COMPLETA = {"fecha_antes_de", "fecha_despues_de", "fecha_entre", "fecha_dia"}
 
 # tipos de gráfico que muestran los valores en bruto de una categoría (no un número agregado),
 # por eso necesitan una operación relacionada con la distribución y no con un total
@@ -46,6 +50,12 @@ def _es_fecha_aaaa_mm_dd(valor) -> bool:
         return False
 
 
+# True si el valor es un número entero sin signo, sirve tanto 30 como "30". Lo uso para el
+# año del trimestre y para los días de "últimos X días"
+def _es_entero(valor) -> bool:
+    return re.fullmatch(r"\d+", str(valor)) is not None
+
+
 # compruebo los filtros de fecha antes de calcular nada, así si algo está mal el usuario
 # recibe un error que se entiende en vez de un gráfico vacío o un error interno
 def _validar_filtro_de_fecha(tipo: str, valores: list, columna: Columna) -> None:
@@ -58,7 +68,7 @@ def _validar_filtro_de_fecha(tipo: str, valores: list, columna: Columna) -> None
         raise HTTPException(status_code=400,
                             detail=f"Los filtros de fecha solo se pueden usar en columnas de fechas, y '{columna.nombre_columna}' no lo es")
 
-    if not all(_es_fecha_aaaa_mm_dd(valor) for valor in valores):
+    if tipo in TIPOS_FILTRO_CON_FECHA_COMPLETA and not all(_es_fecha_aaaa_mm_dd(valor) for valor in valores):
         raise HTTPException(status_code=400,
                             detail="Las fechas de los filtros tienen que estar en formato aaaa-mm-dd")
 
@@ -66,6 +76,22 @@ def _validar_filtro_de_fecha(tipo: str, valores: list, columna: Columna) -> None
     if tipo == "fecha_entre" and str(valores[0]) > str(valores[1]):
         raise HTTPException(status_code=400,
                             detail="En 'fecha entre' la primera fecha no puede ser posterior a la segunda")
+
+    # el mes llega como aaaa-mm (lo que devuelve el input de mes del frontend), y el mes
+    # tiene que ir del 01 al 12
+    if tipo == "fecha_mes" and not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", str(valores[0])):
+        raise HTTPException(status_code=400,
+                            detail="El mes tiene que estar en formato aaaa-mm")
+
+    # el trimestre llega como [año, trimestre], y solo hay 4 trimestres
+    if tipo == "fecha_trimestre" and (len(valores) != 2 or not _es_entero(valores[0])
+                                      or str(valores[1]) not in {"1", "2", "3", "4"}):
+        raise HTTPException(status_code=400,
+                            detail="El filtro de trimestre necesita el año y un trimestre del 1 al 4")
+
+    if tipo == "fecha_ultimos_dias" and (not _es_entero(valores[0]) or int(valores[0]) < 1):
+        raise HTTPException(status_code=400,
+                            detail="El número de días tiene que ser un número entero mayor que 0")
 
 
 # la separo del endpoint de abajo para reutilizarla desde el informe generado con IA, así
@@ -161,6 +187,7 @@ def crear_grafico(informe: InformeGenerado, datos: GraficoCreadoRequest, db: Ses
             "tipo_filtro": filtro.tipo_filtro,
             "valores": filtro.valores,
             "conector": filtro.conector,
+            "negado": filtro.negado,
         })
 
     # CALCULO EL RESULTADO
@@ -199,7 +226,8 @@ def crear_grafico(informe: InformeGenerado, datos: GraficoCreadoRequest, db: Ses
                            columna_id=filtro.columna_id,
                            tipo_filtro=filtro.tipo_filtro,
                            valores=filtro.valores,
-                           conector=filtro.conector)
+                           conector=filtro.conector,
+                           negado=filtro.negado)
 
     return nuevo_grafico
 
@@ -258,3 +286,25 @@ def listar_graficos_de_informe(informe_id: int, db: Session = Depends(get_db),
     grafico_repo = GraficoRepository(db)
     graficos = grafico_repo.list_by_informe(informe_id)
     return graficos
+
+
+# endpoint para borrar un gráfico de un informe (por ejemplo si se ha creado mal)
+@router.delete("/{grafico_id}", status_code=204)
+def borrar_grafico(informe_id: int, grafico_id: int, db: Session = Depends(get_db),
+                   usuario_actual: Usuario = Depends(get_current_user)):
+
+    grafico_repo = GraficoRepository(db)
+    grafico = grafico_repo.get(grafico_id)
+
+    # las mismas comprobaciones que en obtener_grafico: que el gráfico exista, que sea de
+    # este informe y que el informe sea del usuario logeado
+    if grafico is None or grafico.informe_id != informe_id:
+        raise HTTPException(status_code=404, detail="Grafico no encontrado para este informe")
+
+    if grafico.informe.usuario_id != usuario_actual.id:
+        raise HTTPException(status_code=404, detail="Grafico no encontrado para este informe")
+
+    grafico_repo.delete(grafico)
+    db.commit()
+
+    return None

@@ -1,4 +1,5 @@
 import json
+import re
 import statistics
 import time
 
@@ -13,14 +14,18 @@ from app.services.graficos import TIPOS_VALIDOS, OPERACIONES_VALIDAS
 
 
 # le pido a la IA que no se enrolle y que no use markdown, porque el resumen se
-# muestra tal cual, en texto plano, en la página del informe
+# muestra tal cual, en texto plano, en la página del informe. {idioma} lo relleno con el
+# idioma del archivo (ver detectar_idioma), así el resumen sale en el mismo idioma que el archivo
 INSTRUCCIONES = (
     "Eres un analista de datos. Te paso los datos de los gráficos de un informe y "
-    "tienes que escribir un resumen en español explicando las conclusiones más "
+    "tienes que escribir un resumen en {idioma} explicando las conclusiones más "
     "importantes: tendencias, qué categoría destaca, comparaciones entre los "
     "gráficos si tiene sentido. Máximo 150 palabras, en texto plano, sin markdown "
     "ni listas, como si fuera un párrafo de un informe de verdad."
 )
+
+# idioma que uso si no se ha podido saber el del archivo (por ejemplo si la IA está saturada)
+IDIOMA_POR_DEFECTO = "español"
 
 # máximo de gráficos que le dejo proponer a la IA de una vez, para que el informe
 # generado no salga interminable
@@ -107,8 +112,8 @@ def _describir_columnas(archivo: ArchivoSubido) -> str:
 # a partir de las columnas del archivo. Esta función solo habla con la IA y devuelve
 # la lista ya convertida a diccionarios, no crea nada en la base de datos: eso lo hace
 # el router, llamando a crear_grafico() de grafico.py, que es la misma función que usa
-# el flujo manual
-def proponer_graficos(archivo: ArchivoSubido) -> list[dict]:
+# el flujo manual. Los títulos de los gráficos los pide en el idioma que le paso
+def proponer_graficos(archivo: ArchivoSubido, idioma: str = IDIOMA_POR_DEFECTO) -> list[dict]:
 
     if not settings.gemini_api_key:
         raise ValueError("Falta configurar la clave de la API de Gemini (GEMINI_API_KEY en el .env)")
@@ -125,7 +130,7 @@ def proponer_graficos(archivo: ArchivoSubido) -> list[dict]:
         f'- "operacion_agregacion": uno de estos valores: {sorted(OPERACIONES_VALIDAS)}\n'
         '- "columna_x": el nombre EXACTO de una de las columnas de abajo\n'
         '- "columna_y": el nombre EXACTO de otra columna, o null si usas "recuento"\n'
-        '- "nombre": un título corto en español para el gráfico\n\n'
+        f'- "nombre": un título corto en {idioma} para el gráfico\n\n'
         'Reglas: usa "recuento" cuando columna_y sea null. Para el resto de operaciones '
         'columna_y tiene que ser una columna numérica (salvo "recuento_distintos", que vale '
         'con cualquier tipo). "tarta" solo se puede usar con "recuento" o "suma". "caja" e '
@@ -198,9 +203,9 @@ def _describir_grafico(grafico: GraficoGenerado) -> str:
 
 # PIDE EL RESUMEN EN LENGUAJE NATURAL A LA IA
 # junta los datos de todos los gráficos del informe y se los manda a Gemini para que
-# devuelva el resumen en lenguaje natural. Esta función solo habla con la IA, no
-# guarda nada en la base de datos, eso ya lo hace el router con el repositorio
-def generar_resumen_informe(informe: InformeGenerado) -> str:
+# devuelva el resumen en lenguaje natural, en el idioma que le paso. Esta función solo
+# habla con la IA, no guarda nada en la base de datos, eso ya lo hace el router con el repositorio
+def generar_resumen_informe(informe: InformeGenerado, idioma: str = IDIOMA_POR_DEFECTO) -> str:
 
     if not settings.gemini_api_key:
         raise ValueError("Falta configurar la clave de la API de Gemini (GEMINI_API_KEY en el .env)")
@@ -209,9 +214,41 @@ def generar_resumen_informe(informe: InformeGenerado) -> str:
         raise ValueError("El informe no tiene gráficos todavía, no hay nada que resumir")
 
     datos_graficos = "\n\n".join(_describir_grafico(g) for g in informe.graficos)
-    prompt = f"{INSTRUCCIONES}\n\n{datos_graficos}"
+    prompt = f"{INSTRUCCIONES.format(idioma=idioma)}\n\n{datos_graficos}"
 
     return _generar_contenido(prompt)
 
 
+# DETECTA EN QUÉ IDIOMA ESTÁ EL ARCHIVO
+# le pregunto a la IA en qué idioma está el archivo mirando solo los nombres de las columnas
+# (lo mismo que ve para proponer los gráficos). El router lo llama antes de proponer_graficos
+# y de generar_resumen_informe y les pasa el idioma, así los títulos de los gráficos y el
+# resumen salen en el idioma del archivo y no siempre en español. Esta función solo habla
+# con la IA: guardar el idioma en el archivo lo hace el router
+def detectar_idioma(archivo: ArchivoSubido) -> str:
 
+    if not settings.gemini_api_key:
+        raise ValueError("Falta configurar la clave de la API de Gemini (GEMINI_API_KEY en el .env)")
+
+    if not archivo.columnas:
+        raise ValueError("El archivo no tiene columnas analizadas todavía")
+
+    nombres_columnas = ", ".join(columna.nombre_columna
+                                 for columna in sorted(archivo.columnas, key=lambda c: c.posicion))
+    prompt = (
+        "¿En qué idioma están escritos estos nombres de columnas de una tabla? "
+        "Responde ÚNICAMENTE con el nombre del idioma en español y en minúsculas "
+        "(por ejemplo: español, catalán, inglés, francés), sin punto ni nada más.\n\n"
+        f"Columnas: {nombres_columnas}"
+    )
+
+    # "or ''" por si la IA devuelve una respuesta vacía (respuesta.text puede ser None)
+    idioma = (_generar_contenido(prompt) or "").strip().strip(".").lower()
+
+    # el idioma luego va metido dentro de los otros prompts, así que si la IA no me ha hecho
+    # caso y ha contestado con una frase entera no me fío: solo acepto una o dos palabras
+    # hechas solo de letras (por ejemplo "catalán" o "inglés británico")
+    if not re.fullmatch(r"[^\W\d_]+( [^\W\d_]+)?", idioma):
+        raise ValueError("La IA no ha devuelto un idioma válido")
+
+    return idioma
