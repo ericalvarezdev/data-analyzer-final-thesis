@@ -84,21 +84,52 @@ def describir_filtros(filtros: list) -> str:
     conector_anterior = None
 
     for i, filtro in enumerate(sorted(filtros, key=lambda f: f.id)):
+        # pasa este filtro a una frase. Ej: "Category es Furniture"
         frase = _describir_filtro(filtro)
-
+        
+        # el primer filtro va solo sin conector delante y continue salta a la siguiente vuelta
         if i == 0:
             texto = frase
             continue
-
+        # paso el conector a español ("OR" -> "O", "AND" -> "Y")
         conector = "O" if filtro.conector == "OR" else "Y"
 
-        # los filtros se aplican uno detrás de otro, de izquierda a derecha, así que si se
-        # mezclan Y y O meto entre paréntesis lo que va antes, para que se lea tal cual se
-        # calcula: "(A O B) Y C" no da lo mismo que "A O (B Y C)"
+        # si el conector cambia (de O a Y o al revés), todo lo de antes ya se ha calculado
+        # como un bloque, así que lo meto entre paréntesis. Ej: "A O B" + Y C -> "(A O B) Y C"
+        # (is not None porque en el 2º filtro aún no hay conector anterior con el que comparar)
         if conector_anterior is not None and conector != conector_anterior:
+            # envuelvo entre paréntesis todo lo que llevo hasta ahora. Ej: "A O B" -> "(A O B)"
             texto = f"({texto})"
 
+        # añado al final el conector y la frase del filtro nuevo. Ej: "A" -> "A O B"
         texto = f"{texto} {conector} {frase}"
+        
+        # me guardo este conector para compararlo con el del siguiente filtro
         conector_anterior = conector
 
     return texto
+
+
+
+
+# paso un filtro agregado a una frase corta, por ejemplo "las 5 categorías con el valor más alto"
+def _describir_filtro_agregado(filtro) -> str:
+    if filtro.tipo in ("mayores", "menores"):
+        cantidad = int(filtro.valor)
+        extremo = "más alto" if filtro.tipo == "mayores" else "más bajo"
+        if cantidad == 1:
+            return f"la categoría con el valor {extremo}"
+        return f"las {cantidad} categorías con el valor {extremo}"
+
+    if filtro.tipo == "porcentaje_minimo":
+        # :g quita los decimales que sobran (1.0 sale como 1, pero 0.5 se queda 0.5)
+        return f"sin las categorías de menos del {filtro.valor:g}% del total"
+
+    return f"{filtro.tipo} {filtro.valor}"
+
+
+# junta los filtros agregados de un gráfico en un texto, en el orden en que se aplican.
+# Ej: "sin las categorías de menos del 1% del total, las 5 categorías con el valor más alto"
+def describir_filtros_agregados(filtros_agregados: list) -> str:
+    return ", ".join(_describir_filtro_agregado(filtro)
+                     for filtro in sorted(filtros_agregados, key=lambda f: f.id))

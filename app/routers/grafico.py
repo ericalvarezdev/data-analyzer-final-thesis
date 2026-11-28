@@ -16,9 +16,11 @@ from app.repositories.archivo_repository import ArchivoRepository
 from app.repositories.columna_repository import ColumnaRepository
 from app.repositories.grafico_repository import GraficoRepository
 from app.repositories.filtro_repository import FiltroRepository
+from app.repositories.filtro_agregado_repository import FiltroAgregadoRepository
 from app.services.graficos import (OPERACIONES_VALIDAS, TIPOS_FILTRO_VALIDOS, TIPOS_VALIDOS,
                                    TIPOS_FILTRO_FECHA, OPERACIONES_PERMITEN_TARTA,
                                    OPERACIONES_PERMITEN_DISTRIBUCION, CONECTORES_VALIDOS,
+                                   TIPOS_FILTRO_AGREGADO, TIPOS_GRAFICO_CON_FILTRO_AGREGADO,
                                    generar_especificacion_grafico)
 
 # estos dos tipos de filtro necesitan dos valores (un mínimo y un máximo). El de trimestre
@@ -94,14 +96,44 @@ def _validar_filtro_de_fecha(tipo: str, valores: list, columna: Columna) -> None
                             detail="El número de días tiene que ser un número entero mayor que 0")
 
 
-# la separo del endpoint de abajo para reutilizarla desde el informe generado con IA, así
-# los gráficos de la IA pasan por las mismas validaciones que los manuales. Si la IA llamase
-# directamente al endpoint generar_grafico en vez de a esto habría dos problemas: 1) usuario_actual
-# viene de Depends(get_current_user), que solo lo resuelve FastAPI con una petición HTTP real,
-# no llamando a la función a pelo desde dentro de otro endpoint; 2) generar_grafico hace su
-# propio commit, así que si la IA lo llamase una vez por gráfico y fallase el cuarto de cinco,
-# los 3 anteriores ya se habrían guardado para siempre y el informe quedaría a medias
-def crear_grafico(informe: InformeGenerado, datos: GraficoCreadoRequest, db: Session) -> GraficoGenerado:
+# compruebo los filtros agregados antes de calcular nada, igual que los normales, y los paso a
+# diccionarios, que es lo que necesita el servicio de graficos.py
+def _validar_filtros_agregados(datos: GraficoCreadoRequest) -> list[dict]:
+    filtros_agregados = []
+
+    for filtro in datos.filtros_agregados:
+        if filtro.tipo not in TIPOS_FILTRO_AGREGADO:
+            raise HTTPException(status_code=400, detail=f"Tipo de filtro agregado no soportado: {filtro.tipo}")
+
+        # caja e histograma no agrupan (enseñan los valores en bruto), así que no hay
+        # categorías con un valor sobre las que filtrar
+        if datos.tipo_grafico not in TIPOS_GRAFICO_CON_FILTRO_AGREGADO:
+            raise HTTPException(status_code=400,
+                                detail="Los filtros sobre datos agrupados solo se pueden usar en barras, líneas o tarta")
+
+        if filtro.tipo in {"mayores", "menores"} and (filtro.valor < 1 or filtro.valor != int(filtro.valor)):
+            raise HTTPException(status_code=400,
+                                detail="El número de categorías tiene que ser un número entero mayor que 0")
+
+        if filtro.tipo == "porcentaje_minimo":
+            # el % del total solo tiene sentido si las categorías suman un total, igual que la tarta
+            if datos.operacion_agregacion not in OPERACIONES_PERMITEN_TARTA:
+                raise HTTPException(status_code=400,
+                                    detail="El porcentaje del total solo se puede usar con recuento o suma")
+            if not 0 < filtro.valor < 100:
+                raise HTTPException(status_code=400, detail="El porcentaje tiene que estar entre 0 y 100")
+
+        filtros_agregados.append({"tipo": filtro.tipo, "valor": filtro.valor})
+
+    return filtros_agregados
+
+
+# VALIDA Y CALCULA EL GRÁFICO, PERO NO LO GUARDA
+# antes esto estaba dentro de crear_grafico(), pero lo separo para que el chat pueda calcular
+# un gráfico y enseñarlo sin guardarlo en el informe (solo se guarda si el usuario le da a
+# "Guardar en el informe"). Así los gráficos del chat pasan por las mismas validaciones que
+# los manuales y que los del informe con IA
+def calcular_especificacion(informe: InformeGenerado, datos: GraficoCreadoRequest, db: Session) -> dict:
 
     # valido que el tipo de gráfico es soportado
     if datos.tipo_grafico not in TIPOS_VALIDOS:
@@ -190,6 +222,9 @@ def crear_grafico(informe: InformeGenerado, datos: GraficoCreadoRequest, db: Ses
             "negado": filtro.negado,
         })
 
+    # los filtros que se aplican después de agrupar (las 5 mayores, quitar las de menos del 1%...)
+    filtros_agregados = _validar_filtros_agregados(datos)
+
     # CALCULO EL RESULTADO
     try:
         especificacion = generar_especificacion_grafico(ruta_archivo=archivo.ruta_almacenamiento,
@@ -200,12 +235,28 @@ def crear_grafico(informe: InformeGenerado, datos: GraficoCreadoRequest, db: Ses
                                         filtros=filtros_para_calculo,
                                         tipo_grafico=datos.tipo_grafico,
                                         nombre_columna_x=columna_x.nombre_columna,
-                                        nombre_columna_y=columna_y.nombre_columna if columna_y else None)
+                                        nombre_columna_y=columna_y.nombre_columna if columna_y else None,
+                                        filtros_agregados=filtros_agregados)
 
     except ValueError as e:
-        # captura el "los filtros no dejan ninguna fila" del servicio de graficos
+        # captura el "los filtros no dejan ninguna fila" del servicio de graficos (y el
+        # "no dejan ninguna categoría" de los filtros agregados)
         raise HTTPException(status_code=400, detail=str(e))
 
+    return especificacion
+
+
+# la separo del endpoint de abajo para reutilizarla desde el informe generado con IA, así
+# los gráficos de la IA pasan por las mismas validaciones que los manuales. Si la IA llamase
+# directamente al endpoint generar_grafico en vez de a esto habría dos problemas: 1) usuario_actual
+# viene de Depends(get_current_user), que solo lo resuelve FastAPI con una petición HTTP real,
+# no llamando a la función a pelo desde dentro de otro endpoint; 2) generar_grafico hace su
+# propio commit, así que si la IA lo llamase una vez por gráfico y fallase el cuarto de cinco,
+# los 3 anteriores ya se habrían guardado para siempre y el informe quedaría a medias
+def crear_grafico(informe: InformeGenerado, datos: GraficoCreadoRequest, db: Session) -> GraficoGenerado:
+
+    # valido y calculo (si algo está mal, aquí ya salta el error y no se guarda nada)
+    especificacion = calcular_especificacion(informe, datos, db)
 
     # GUARDO EL GRÁFICO
     grafico_repo = GraficoRepository(db)
@@ -228,6 +279,13 @@ def crear_grafico(informe: InformeGenerado, datos: GraficoCreadoRequest, db: Ses
                            valores=filtro.valores,
                            conector=filtro.conector,
                            negado=filtro.negado)
+
+    # GUARDO LOS FILTROS AGREGADOS
+    filtro_agregado_repo = FiltroAgregadoRepository(db)
+    for filtro in datos.filtros_agregados:
+        filtro_agregado_repo.create(grafico_id=nuevo_grafico.id,
+                                    tipo=filtro.tipo,
+                                    valor=filtro.valor)
 
     return nuevo_grafico
 

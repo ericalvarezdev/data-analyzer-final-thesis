@@ -214,6 +214,7 @@ def generar_resumen_informe(informe: InformeGenerado, idioma: str = IDIOMA_POR_D
         raise ValueError("El informe no tiene gráficos todavía, no hay nada que resumir")
 
     datos_graficos = "\n\n".join(_describir_grafico(g) for g in informe.graficos)
+    # format() cambia el {idioma} de INSTRUCCIONES por el idioma detectado
     prompt = f"{INSTRUCCIONES.format(idioma=idioma)}\n\n{datos_graficos}"
 
     return _generar_contenido(prompt)

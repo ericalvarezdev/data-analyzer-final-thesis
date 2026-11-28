@@ -10,7 +10,6 @@ from pypdf import PdfWriter
 
 from app.models.informe_generado import InformeGenerado
 from app.models.grafico_generado import GraficoGenerado
-from app.services.texto_filtros import describir_filtros
 
 
 # a partir de cuántas letras parto el texto de los filtros en otra línea, para que no se
@@ -27,7 +26,8 @@ LETRAS_POR_LINEA_FILTROS = 80
 def _titulo_con_filtros(grafico: GraficoGenerado) -> tuple[str, int]:
     titulo = html.escape(grafico.nombre or f"Gráfico #{grafico.id}", quote=False)
 
-    filtros = describir_filtros(grafico.filtros)
+    # el mismo texto que enseña la web (filtros normales y agregados)
+    filtros = grafico.filtros_texto
     if not filtros:
         return titulo, 0
 

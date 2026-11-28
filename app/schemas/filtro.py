@@ -21,3 +21,21 @@ class FiltroResponse(BaseModel):
 
     class Config:
         from_attributes=True
+        
+
+
+# lo que el usuario manda para un filtro que se aplica después de agrupar
+# (ver TIPOS_FILTRO_AGREGADO en services/graficos.py)
+class FiltroAgregadoRequest(BaseModel):
+    tipo: str # mayores, menores o porcentaje_minimo
+    valor: float # cuántas categorías (mayores/menores) o el % (porcentaje_minimo)
+
+# información que la api devuelve de un filtro agregado
+class FiltroAgregadoResponse(BaseModel):
+    id: int
+    grafico_id: int
+    tipo: str
+    valor: float
+
+    class Config:
+        from_attributes=True

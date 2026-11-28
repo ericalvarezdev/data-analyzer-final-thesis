@@ -58,16 +58,20 @@ def convertir_a_fecha(serie: pd.Series) -> pd.Series:
             return serie.dt.tz_convert("UTC").dt.tz_localize(None)
         return serie
 
-    # un número no lo trato nunca como fecha (pandas lo leería como nanosegundos desde 1970)
+    # un número no lo trato nunca como fecha
     if pd.api.types.is_numeric_dtype(serie) or pd.api.types.is_bool_dtype(serie):
         return vacia
 
+    # cojo los primeros 200 valores que no están vacíos (la muestra)
     muestra = serie.dropna().head(TAMAÑO_MUESTRA_FECHAS)
     if muestra.empty:
         return vacia
 
+    # pruebo los formatos en orden: ISO, día/mes y mes/día
     for forma in FORMAS_DE_LEER_FECHAS:
+        # notna() pone True en las fechas convertidas y False en las que no, y mean() hace la media
         if _texto_a_fecha(muestra, forma).notna().mean() >= PORCENTAJE_MINIMO_FECHAS:
+            # si llega al 90%, leo toda la columna con ese formato
             return _texto_a_fecha(serie, forma)
 
     return vacia
@@ -77,6 +81,7 @@ def convertir_a_fecha(serie: pd.Series) -> pd.Series:
 # convertir. Las celdas vacías no cuentan: antes sí contaban, y una columna de fechas con
 # más de un 10% de celdas vacías acababa marcada como texto
 def es_columna_fecha(serie: pd.Series) -> bool:
+    
     valores_con_dato = serie.notna().sum()
     if valores_con_dato == 0:
         return False

@@ -35,6 +35,21 @@ OPERACIONES_PERMITEN_TARTA = {"recuento", "suma"}
 OPERACIONES_PERMITEN_DISTRIBUCION = {"media", "mediana", "desviacion_estandar", "varianza"}
 
 
+
+
+# filtros que se aplican DESPUÉS de agrupar, sobre el resultado (un número por categoría).
+# Los filtros normales eligen filas antes de agrupar ("solo las ventas de 2017"), estos
+# eligen categorías del resultado ("las 5 regiones con más ventas"):
+# - mayores: me quedo con las N categorías con el valor más alto
+# - menores: me quedo con las N categorías con el valor más bajo
+# - porcentaje_minimo: quito las categorías que no llegan a ese % del total
+TIPOS_FILTRO_AGREGADO = {"mayores", "menores", "porcentaje_minimo"}
+
+# los filtros agregados solo tienen sentido en los gráficos que agrupan (un número por
+# categoría). Caja e histograma enseñan los valores en bruto, ahí no hay nada que filtrar
+TIPOS_GRAFICO_CON_FILTRO_AGREGADO = {"barras", "lineas", "tarta"}
+
+
 # _calcular_mascara() calcula el true/false de un filtro, fila a fila (por ejemplo Ciudad == "Barcelona"),
 # aplicar_filtros() junta las máscaras de todos los filtros en Y/O y recorta el dataframe de golpe,
 # construir_especificacion() calcula sus ventas por producto, generar_especificacion_grafico()
@@ -44,15 +59,15 @@ OPERACIONES_PERMITEN_DISTRIBUCION = {"media", "mediana", "desviacion_estandar", 
 # calcula la máscara de los filtros de fecha. Comparo por días (sin la hora), así "antes
 # del 1 de marzo" o "entre el 1 y el 31 de marzo" no dependen de a qué hora fue cada venta.
 # Antes con horas fallaba: "entre el 1 y el 31 de marzo" se dejaba fuera el día 31 a partir
-# de las 00:00. Los valores llegan del frontend ya comprobados en el router: las fechas en
-# formato aaaa-mm-dd, el mes como aaaa-mm, el trimestre como [año, trimestre] y los
-# últimos días como un número
+# de las 00:00.
 def _mascara_fecha(serie: pd.Series, tipo: str, valores: list) -> pd.Series:
     # la columna puede venir como texto (csv) o ya como fecha (excel), convertir_a_fecha
     # sirve para los dos casos. Lo que no se puede leer como fecha queda vacío y no cumple
     # ningún filtro
     fechas = convertir_a_fecha(serie)
-    dias = fechas.dt.normalize() # normalize() deja la fecha a las 00:00, es decir, quita la hora
+    # normalize() pone todas las fechas a las 00:00, así solo queda el día. Ej: 31/03/2025 15:00 -> 31/03/2025 00:00.
+    # Así "hasta el 31 de marzo" también coge las ventas del día 31, sean a la hora que sean
+    dias = fechas.dt.normalize()
 
     if tipo == "fecha_antes_de":
         return dias < pd.Timestamp(valores[0])
@@ -187,12 +202,50 @@ def aplicar_filtros(df: pd.DataFrame, filtros: list[dict]) -> pd.DataFrame:
     return df[mascara_acumulada]
 
 
+# aplica los filtros agregados al resultado de agrupar: una Serie con un valor por categoría,
+# por ejemplo {"West": 725457, "East": 678781, ...}. Se aplican en orden, uno detrás de otro
+def aplicar_filtros_agregados(agrupado: pd.Series, filtros_agregados: list[dict]) -> pd.Series:
+
+    # el total lo calculo antes de quitar nada: si lo calculase después de cada filtro,
+    # el % de las categorías que quedan cambiaría cada vez que quito una
+    total = agrupado.sum()
+    hay_negativos = (agrupado < 0).any()
+
+    for filtro in filtros_agregados:
+        tipo = filtro["tipo"]
+        valor = filtro["valor"]
+
+        if tipo == "mayores":
+            agrupado = agrupado.sort_values(ascending=False).head(int(valor))
+
+        elif tipo == "menores":
+            agrupado = agrupado.sort_values(ascending=True).head(int(valor))
+
+        elif tipo == "porcentaje_minimo":
+            # con valores negativos (por ejemplo un beneficio con pérdidas) el "% del total"
+            # no tiene sentido: una categoría podría ser más del 100% del total
+            if hay_negativos or total <= 0:
+                raise ValueError("El porcentaje del total solo se puede calcular si todos los valores son positivos")
+            # me quedo con las que llegan al % pedido. Ej: con 1, quito las de menos del 1%
+            agrupado = agrupado[agrupado / total * 100 >= valor]
+
+        else:
+            raise ValueError(f"Tipo de filtro agregado no soportado: {tipo}")
+
+    if agrupado.empty:
+        raise ValueError("Los filtros sobre los datos agrupados no dejan ninguna categoría")
+
+    return agrupado
+
+
+
 # calcula el valor agregado (suma, media, etc.) de cada categoría de la columna x.
 # lo usan barras y líneas, que necesitan un número por categoría, no los valores en bruto.
 # todas_las_categorias=True no se queda solo con las MAX_CATEGORIAS más grandes, lo uso
 # cuando el eje x son fechas
 def _agregar(df: pd.DataFrame, posicion_x: int, posicion_y: int | None,
-             operacion: str, todas_las_categorias: bool = False) -> tuple[list[str], list[float]]:
+             operacion: str, todas_las_categorias: bool = False,
+             filtros_agregados: list[dict] | None = None) -> tuple[list[str], list[float]]:
 
     serie_x = df.iloc[:, posicion_x]
 
@@ -223,10 +276,15 @@ def _agregar(df: pd.DataFrame, posicion_x: int, posicion_y: int | None,
         # fillna(0) porque con poca cantidad de datos por categoría la desviación
         # estándar/varianza puede salir vacía (NaN) en vez de 0
         agrupado = metodo().fillna(0)
-
-    # en barras y tarta me quedo con las categorías más grandes para que se pueda leer.
-    # Con fechas en el eje x no: ahí lo que importa es ver la evolución entera, y quedarme
-    # con los 20 días más altos dejaba un gráfico con huecos que parecía otra cosa
+        
+    # los filtros agregados van antes del corte de las 20 categorías: si fuesen después,
+    # el % del total se calcularía solo con las 20 más grandes y no con todas
+    if filtros_agregados:
+        agrupado = aplicar_filtros_agregados(agrupado, filtros_agregados)
+    
+    # en barras y tarta me quedo solo con las 20 categorías más grandes para que se pueda leer.
+    # Con fechas en el eje x no: construir_especificacion() me pasa todas_las_categorias=True,
+    # así que este if NO se ejecuta y salen todos los días (si no, la línea saldría con huecos)
     if not todas_las_categorias:
         agrupado = agrupado.sort_values(ascending=False).head(MAX_CATEGORIAS)
 
@@ -296,10 +354,12 @@ def _valores_crudos_por_categoria(df: pd.DataFrame, posicion_x: int,
 # dibujan exactamente esta especificación, así que el gráfico sale siempre igual en los dos sitios
 def construir_especificacion(df: pd.DataFrame, posicion_x: int, posicion_y: int | None,
                               operacion: str, tipo_grafico: str,
-                              nombre_columna_x: str, nombre_columna_y: str | None) -> dict[str, Any]:
+                              nombre_columna_x: str, nombre_columna_y: str | None,
+                              filtros_agregados: list[dict] | None = None) -> dict[str, Any]:
 
     if tipo_grafico == "tarta":
-        etiquetas, valores = _agregar(df, posicion_x, posicion_y, operacion)
+        etiquetas, valores = _agregar(df, posicion_x, posicion_y, operacion,
+                                      filtros_agregados=filtros_agregados)
         return {
             "data": [{"type": "pie", "labels": etiquetas, "values": valores}],
             "layout": {},
@@ -310,7 +370,7 @@ def construir_especificacion(df: pd.DataFrame, posicion_x: int, posicion_y: int 
 
     if tipo_grafico == "lineas":
         etiquetas, valores = _agregar(df, posicion_x, posicion_y, operacion,
-                                      todas_las_categorias=eje_x_es_fecha)
+                                      todas_las_categorias=eje_x_es_fecha, filtros_agregados=filtros_agregados)
         etiquetas, valores = _ordenar_por_x(etiquetas, valores)
         return {
             "data": [{"type": "scatter", "mode": "lines+markers", "x": etiquetas, "y": valores}],
@@ -365,7 +425,7 @@ def construir_especificacion(df: pd.DataFrame, posicion_x: int, posicion_y: int 
 
     # barras (por defecto)
     etiquetas, valores = _agregar(df, posicion_x, posicion_y, operacion,
-                                  todas_las_categorias=eje_x_es_fecha)
+                                  todas_las_categorias=eje_x_es_fecha, filtros_agregados=filtros_agregados)
     if eje_x_es_fecha:
         etiquetas, valores = _ordenar_por_x(etiquetas, valores)
     return {
@@ -377,12 +437,14 @@ def construir_especificacion(df: pd.DataFrame, posicion_x: int, posicion_y: int 
     }
 
 
-# primero aplico filtros y luego construyo la especificación del gráfico con el df ya filtrado
+# primero aplico filtros y luego construyo la especificación del gráfico con el df ya filtrado.
+# filtros_agregados son los que se aplican después de agrupar (ver aplicar_filtros_agregados)
 def generar_especificacion_grafico(ruta_archivo: str, formato: str, posicion_x: int,
                                     posicion_y: int | None, operacion: str,
                                     filtros: list[dict], tipo_grafico: str,
                                     nombre_columna_x: str,
-                                    nombre_columna_y: str | None) -> dict[str, Any]:
+                                    nombre_columna_y: str | None,
+                                    filtros_agregados: list[dict] | None = None) -> dict[str, Any]:
 
     df = leer_archivo(ruta_archivo, formato)
     df = aplicar_filtros(df, filtros)
@@ -391,4 +453,4 @@ def generar_especificacion_grafico(ruta_archivo: str, formato: str, posicion_x: 
         raise ValueError("Los filtros aplicados no dejan ninguna fila")
 
     return construir_especificacion(df, posicion_x, posicion_y, operacion, tipo_grafico,
-                                     nombre_columna_x, nombre_columna_y)
+                                     nombre_columna_x, nombre_columna_y, filtros_agregados)

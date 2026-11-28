@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from app.schemas.columna import ColumnaResponse
 from app.schemas.filtro import FiltroRequest, FiltroResponse
 
+from app.schemas.filtro import FiltroRequest, FiltroResponse, FiltroAgregadoRequest, FiltroAgregadoResponse
 
 class GraficoCreadoRequest(BaseModel):
     columna_x_id: int
@@ -18,6 +19,9 @@ class GraficoCreadoRequest(BaseModel):
 
     filtros: list[FiltroRequest] = []
 
+    # los que se aplican después de agrupar. Vacío por defecto, así el formulario manual
+    # y el informe con IA siguen funcionando igual sin mandarlos
+    filtros_agregados: list[FiltroAgregadoRequest] = []
 
 
 class GraficoGeneradoResponse(BaseModel):
@@ -30,6 +34,8 @@ class GraficoGeneradoResponse(BaseModel):
     columna_x: ColumnaResponse
     columna_y: ColumnaResponse | None
     filtros: list[FiltroResponse] = []
+    
+    filtros_agregados: list[FiltroAgregadoResponse] = []
 
     # los filtros en texto, para enseñarlos en la web debajo del gráfico (sale de la
     # propiedad filtros_texto del modelo, es el mismo texto que el del PDF)

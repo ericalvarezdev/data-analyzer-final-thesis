@@ -5,4 +5,4 @@ from app.models.columna import Columna
 from app.models.informe_generado import InformeGenerado
 from app.models.grafico_generado import GraficoGenerado
 from app.models.filtro_aplicado import FiltroAplicado
-
+from app.models.filtro_agregado import FiltroAgregado
